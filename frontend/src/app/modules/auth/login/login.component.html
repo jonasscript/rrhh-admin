@@ -1,0 +1,35 @@
+<div class="login-wrapper">
+      <p-card styleClass="login-card">
+        <ng-template pTemplate="header">
+          <div class="login-header">
+            <h1>RRHH<span>Admin</span></h1>
+            <p>Sistema de Administración de Recursos Humanos</p>
+          </div>
+        </ng-template>
+
+        <form [formGroup]="form" (ngSubmit)="onSubmit()">
+          @if (error) {
+            <p-message severity="error" [text]="error" styleClass="w-full mb-3" />
+          }
+
+          <div class="field">
+            <label for="email">Correo electrónico</label>
+            <input pInputText id="email" formControlName="email" class="w-full" placeholder="admin@empresa.com" />
+          </div>
+
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <p-password id="password" formControlName="password" [feedback]="false" [toggleMask]="true" styleClass="w-full" inputStyleClass="w-full" placeholder="••••••••" />
+          </div>
+
+          <p-button
+            type="submit"
+            label="Ingresar"
+            icon="pi pi-sign-in"
+            [loading]="loading"
+            [disabled]="form.invalid"
+            styleClass="w-full mt-2"
+          />
+        </form>
+      </p-card>
+    </div>

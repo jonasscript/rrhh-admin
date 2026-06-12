@@ -1,0 +1,78 @@
+<p-toast />
+
+    <div class="page-header">
+      <h1 class="page-title">Turnos</h1>
+      <p-button label="Asignar turno" icon="pi pi-plus" (onClick)="showDialog = true" />
+    </div>
+
+    <!-- Navegación de semana -->
+    <div class="flex align-items-center gap-3 mb-4">
+      <p-button icon="pi pi-chevron-left" [text]="true" (onClick)="prevWeek()" />
+      <span class="font-semibold text-lg">
+        {{ weekStart() | date:'dd MMM' }} — {{ weekEnd() | date:'dd MMM yyyy' }}
+      </span>
+      <p-button icon="pi pi-chevron-right" [text]="true" (onClick)="nextWeek()" />
+      <p-button label="Hoy" severity="secondary" [text]="true" (onClick)="goToday()" />
+    </div>
+
+    <!-- Grilla de turnos -->
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            <th class="p-2 border-1 border-200 bg-100" style="min-width:140px">Empleado</th>
+            @for (day of weekDays(); track day) {
+              <th class="p-2 border-1 border-200 bg-100 text-center" style="min-width:110px">
+                {{ day | date:'EEE dd' }}
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (emp of uniqueEmployees(); track emp.id) {
+            <tr>
+              <td class="p-2 border-1 border-200 font-medium">{{ emp.name }}</td>
+              @for (day of weekDays(); track day) {
+                <td class="p-2 border-1 border-200 text-center">
+                  @for (a of getAssignment(emp.id, day); track a.id) {
+                    <div class="border-round px-2 py-1 text-white text-xs"
+                         [style.background]="a.color">
+                      {{ a.shift_name }}<br>{{ a.start_time }}–{{ a.end_time }}
+                    </div>
+                  }
+                </td>
+              }
+            </tr>
+          }
+          @if (uniqueEmployees().length === 0) {
+            <tr><td [attr.colspan]="8" class="text-center p-4 text-500">Sin asignaciones esta semana</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Diálogo asignar turno -->
+    <p-dialog header="Asignar turno" [(visible)]="showDialog" [modal]="true" [style]="{width:'420px'}">
+      <div class="flex flex-column gap-3 mt-2">
+        <div>
+          <label class="block mb-1">Empleado *</label>
+          <p-dropdown [(ngModel)]="newAssign.employeeId" [options]="employees()"
+                      optionLabel="label" optionValue="value" class="w-full"
+                      placeholder="Seleccionar empleado" [filter]="true" />
+        </div>
+        <div>
+          <label class="block mb-1">Turno *</label>
+          <p-dropdown [(ngModel)]="newAssign.shiftTemplateId" [options]="templates()"
+                      optionLabel="label" optionValue="value" class="w-full" placeholder="Seleccionar turno" />
+        </div>
+        <div>
+          <label class="block mb-1">Fecha *</label>
+          <p-calendar [(ngModel)]="newAssign.date" dateFormat="yy-mm-dd"
+                      [showIcon]="true" class="w-full" />
+        </div>
+      </div>
+      <ng-template pTemplate="footer">
+        <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showDialog = false" />
+        <p-button label="Asignar" icon="pi pi-check" (onClick)="assign()" [loading]="saving()" />
+      </ng-template>
+    </p-dialog>

@@ -1,0 +1,63 @@
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Pagos mensuales de obligaciones</h1>
+    <p class="page-subtitle">Registro de cuotas de décimos y fondo de reserva pagadas por nómina.</p>
+  </div>
+  <div class="flex gap-2">
+    <a routerLink="/obligaciones">
+      <p-button icon="pi pi-arrow-left" label="Volver" [text]="true" />
+    </a>
+    <p-button icon="pi pi-refresh" [text]="true" pTooltip="Recargar" (onClick)="load()" />
+  </div>
+</div>
+
+<p-table
+  [value]="records()"
+  [loading]="loading()"
+  [rows]="pageSize"
+  [totalRecords]="total()"
+  responsiveLayout="scroll"
+  styleClass="p-datatable-sm"
+  [rowHover]="true"
+>
+  <ng-template pTemplate="header">
+    <tr>
+      <th>Empleado</th>
+      <th>Cédula</th>
+      <th>Obligación</th>
+      <th class="text-center">Período</th>
+      <th class="text-center">Cuota</th>
+      <th class="text-right">Monto pagado</th>
+      <th>Registrado</th>
+    </tr>
+  </ng-template>
+
+  <ng-template pTemplate="body" let-rec>
+    <tr>
+      <td class="font-medium">{{ rec.first_name }} {{ rec.last_name }}</td>
+      <td class="text-muted">{{ rec.cedula }}</td>
+      <td>
+        <p-tag [value]="rec.obligation_name"
+               [severity]="oblCodeSeverity(rec.obligation_code)" />
+      </td>
+      <td class="text-center">{{ monthLabel(rec.period_month) }} {{ rec.period_year }}</td>
+      <td class="text-center">
+        <span class="fraction-badge">{{ fractionLabel(rec) }}</span>
+      </td>
+      <td class="text-right font-bold text-green-700">
+        {{ rec.amount | currency:'USD':'symbol':'1.2-2' }}
+      </td>
+      <td class="text-muted text-sm">
+        {{ rec.created_at | date:'dd/MM/yyyy' }}
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template pTemplate="emptymessage">
+    <tr>
+      <td colspan="7" class="text-center py-4 text-color-secondary">
+        No hay registros de pagos. Genera una nómina para ver los pagos aquí.
+      </td>
+    </tr>
+  </ng-template>
+</p-table>

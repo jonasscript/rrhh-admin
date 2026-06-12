@@ -1,0 +1,12 @@
+:host ::ng-deep .payroll-subtotal td {
+  background: #f4f8ff;
+  border-top: 1px solid #d7e8ff;
+  padding: 0.45rem 0.75rem;
+}
+
+:host ::ng-deep .payroll-total td {
+  background: #e7f0ff;
+  border-top: 2px solid #a0c0f0;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+}

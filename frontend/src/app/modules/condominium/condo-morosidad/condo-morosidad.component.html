@@ -1,0 +1,42 @@
+<div class="page">
+      <div class="page-header">
+        <h2>Reporte de Morosidad</h2>
+      </div>
+
+      @if (!loading && owners.length === 0) {
+        <div class="empty-state">
+          <i class="pi pi-check-circle text-4xl text-green-500"></i>
+          <p>No hay co-propietarios con mora. Todo al día.</p>
+        </div>
+      }
+
+      <p-table [value]="owners" [loading]="loading" stripedRows>
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Depto.</th>
+            <th>Propietario</th>
+            <th>Email</th>
+            <th>% Participación</th>
+            <th>Mora acumulada</th>
+            <th>Períodos con deuda</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-owner>
+          <tr>
+            <td><strong>{{ owner.apartmentNumber }}</strong></td>
+            <td>{{ owner.fullName }}</td>
+            <td>{{ owner.email }}</td>
+            <td>{{ owner.participationPct }}%</td>
+            <td><span class="mora-badge">\${{ owner.moraAmount | number:'1.2-2' }}</span></td>
+            <td>{{ owner.aliquotPayments?.length || 0 }} período(s)</td>
+          </tr>
+        </ng-template>
+      </p-table>
+
+      @if (owners.length > 0) {
+        <div class="total-row">
+          <strong>Total mora acumulada:</strong>
+          <span class="mora-badge">\${{ totalMora | number:'1.2-2' }}</span>
+        </div>
+      }
+    </div>

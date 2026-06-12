@@ -1,0 +1,27 @@
+<p-toast />
+    <div class="page">
+      <h2 class="page-title">Configuración del Condominio</h2>
+      <p-card styleClass="config-card">
+        <form [formGroup]="form" (ngSubmit)="save()">
+          <div class="field">
+            <label>Nombre del condominio *</label>
+            <input pInputText formControlName="condoName" class="w-full" />
+          </div>
+          <div class="field">
+            <label>Dirección</label>
+            <input pInputText formControlName="address" class="w-full" />
+          </div>
+          <div class="field">
+            <label>Email del administrador *</label>
+            <input pInputText formControlName="adminEmail" type="email" class="w-full" />
+            <small class="text-color-secondary">Este email aparece como remitente en los cobros.</small>
+          </div>
+          <div class="field">
+            <label>Gastos fijos mensuales *</label>
+            <p-inputNumber formControlName="fixedExpenses" [min]="0" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
+            <small class="text-color-secondary">Mantenimiento, servicios, seguro. Se aplica como base en todos los períodos.</small>
+          </div>
+          <button pButton type="submit" label="Guardar configuración" icon="pi pi-save" [loading]="saving" [disabled]="form.invalid" class="mt-2"></button>
+        </form>
+      </p-card>
+    </div>

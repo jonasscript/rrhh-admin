@@ -1,0 +1,174 @@
+<p-toast />
+
+<section class="employee-form-page">
+  <div class="hero">
+    <div>
+      <p class="eyebrow">Gestión de personal</p>
+      <h1 class="page-title">{{ isEdit ? 'Editar empleado' : 'Nuevo empleado' }}</h1>
+      <p class="subtitle">Completa la información personal y laboral para registrar al colaborador.</p>
+    </div>
+    <a routerLink="/employees" class="cancel-link">
+      <p-button label="Volver" icon="pi pi-arrow-left" severity="secondary" [outlined]="true" />
+    </a>
+  </div>
+
+  <form [formGroup]="form" (ngSubmit)="submit()" class="form-layout">
+    <p-card styleClass="section-card">
+      <div class="section-header">
+        <div class="section-icon"><i class="pi pi-user"></i></div>
+        <div>
+          <h2>Datos personales</h2>
+          <p>Información de contacto e identificación del empleado.</p>
+        </div>
+      </div>
+
+      <div class="grid labor-grid">
+        <div class="col-12 md:col-6 field">
+          <label for="firstName">Nombre <span>*</span></label>
+          <input id="firstName" pInputText formControlName="firstName" class="w-full" placeholder="Ej: Carlos" />
+        </div>
+
+        <div class="col-12 md:col-6 field">
+          <label for="lastName">Apellido <span>*</span></label>
+          <input id="lastName" pInputText formControlName="lastName" class="w-full" placeholder="Ej: Mena" />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="cedula">Cédula <span>*</span></label>
+          <input id="cedula" pInputText formControlName="cedula" class="w-full" placeholder="Ej: 0102030405" />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="email">Correo electrónico <span>*</span></label>
+          <input id="email" pInputText formControlName="email" type="email" class="w-full" placeholder="nombre@empresa.com" />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="phone">Teléfono</label>
+          <input id="phone" pInputText formControlName="phone" class="w-full" placeholder="0999999999" />
+        </div>
+      </div>
+    </p-card>
+
+    <p-card styleClass="section-card">
+      <div class="section-header">
+        <div class="section-icon"><i class="pi pi-briefcase"></i></div>
+        <div>
+          <h2>Datos laborales</h2>
+          <p>Configuración contractual, cargo y valores base del empleado.</p>
+        </div>
+      </div>
+
+      <div class="grid labor-grid">
+        <div class="col-12 md:col-6 field">
+          <label for="departmentId">Departamento</label>
+          <p-dropdown
+            inputId="departmentId"
+            formControlName="departmentId"
+            [options]="departments()"
+            optionLabel="name"
+            optionValue="id"
+            placeholder="Seleccionar departamento"
+            [showClear]="true"
+            [autoDisplayFirst]="false"
+            class="w-full"
+          />
+        </div>
+
+        <div class="col-12 md:col-6 field">
+          <label for="position">Cargo <span>*</span></label>
+          <input id="position" pInputText formControlName="position" class="w-full" placeholder="Ej: Analista de RRHH" />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="contractType">Tipo de contrato <span>*</span></label>
+          <p-dropdown
+            inputId="contractType"
+            formControlName="contractType"
+            [options]="[
+              {label:'Indefinido', value:'INDEFINIDO'},
+              {label:'Plazo fijo', value:'PLAZO_FIJO'},
+              {label:'Obra cierta', value:'OBRA_CIERTA'}
+            ]"
+            optionLabel="label"
+            optionValue="value"
+            [autoDisplayFirst]="false"
+            class="w-full"
+          />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="startDate">Fecha de ingreso <span>*</span></label>
+          <p-calendar
+            inputId="startDate"
+            formControlName="startDate"
+            dateFormat="yy-mm-dd"
+            [showIcon]="true"
+            inputStyleClass="w-full"
+            class="w-full"
+          />
+        </div>
+
+        <div class="col-12 md:col-4 field">
+          <label for="baseSalary">Salario base <span>*</span></label>
+          <p-inputNumber
+            inputId="baseSalary"
+            formControlName="baseSalary"
+            mode="currency"
+            currency="USD"
+            [minFractionDigits]="2"
+            inputStyleClass="w-full"
+            class="w-full"
+          />
+        </div>
+
+        <div class="col-12 field toggle-row">
+          <div class="toggle-item">
+            <p-checkbox inputId="iessAffiliate" formControlName="iessAffiliate" [binary]="true" />
+            <label for="iessAffiliate">Afiliado al IESS</label>
+          </div>
+
+          <div class="toggle-item" *ngIf="!isEdit">
+            <p-checkbox inputId="createUser" formControlName="createUser" [binary]="true" />
+            <label for="createUser">Crear usuario de acceso</label>
+          </div>
+        </div>
+
+        <div class="col-12 md:col-4 field" *ngIf="isEdit">
+          <label for="status">Estado laboral</label>
+          <p-dropdown
+            inputId="status"
+            formControlName="status"
+            [options]="[
+              {label:'Activo',     value:'ACTIVE'},
+              {label:'Vacaciones', value:'VACATION'},
+              {label:'Inactivo',   value:'INACTIVE'}
+            ]"
+            optionLabel="label"
+            optionValue="value"
+            [autoDisplayFirst]="false"
+            class="w-full"
+          />
+        </div>
+      </div>
+
+      <div class="obligations-notice" *ngIf="isEdit">
+        <i class="pi pi-info-circle"></i>
+        Los préstamos IESS y el fondo de reserva se gestionan en la pestaña
+        <strong>Obligaciones Laborales</strong> del perfil del empleado.
+      </div>
+    </p-card>
+
+    <div class="action-bar">
+      <a routerLink="/employees">
+        <p-button label="Cancelar" icon="pi pi-times" severity="secondary" [text]="true" />
+      </a>
+      <p-button
+        type="submit"
+        [label]="isEdit ? 'Guardar cambios' : 'Crear empleado'"
+        icon="pi pi-check"
+        [loading]="saving()"
+      />
+    </div>
+  </form>
+</section>

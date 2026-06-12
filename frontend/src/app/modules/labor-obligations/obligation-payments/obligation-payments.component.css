@@ -1,0 +1,19 @@
+.page-subtitle {
+  margin: .2rem 0 0;
+  color: var(--text-color-secondary);
+}
+
+.text-muted {
+  color: var(--p-text-muted-color, #9ca3af);
+}
+
+.fraction-badge {
+  display: inline-block;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 12px;
+  padding: .15rem .6rem;
+  font-weight: 700;
+  font-size: .85rem;
+  font-family: monospace;
+}

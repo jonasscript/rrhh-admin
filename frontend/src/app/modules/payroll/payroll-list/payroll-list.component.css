@@ -1,0 +1,29 @@
+.page-subtitle {
+  margin: 0.2rem 0 0;
+  color: var(--text-color-secondary);
+}
+
+.open-period-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border-left: 4px solid;
+  gap: 1rem;
+}
+
+.open-period-card.pending {
+  background: #fffbea;
+  border-left-color: #f59e0b;
+}
+
+.open-period-card.ready {
+  background: #f0fdf4;
+  border-left-color: #22c55e;
+}
+
+.open-period-info {
+  display: flex;
+  align-items: center;
+}

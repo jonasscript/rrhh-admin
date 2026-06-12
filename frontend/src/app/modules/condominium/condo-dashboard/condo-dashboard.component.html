@@ -1,0 +1,31 @@
+<div class="page">
+      <div class="page-header">
+        <h2>Condominio</h2>
+        <div class="header-actions">
+          <button pButton icon="pi pi-cog" label="Configurar" class="p-button-outlined p-button-sm" routerLink="config"></button>
+          <button pButton icon="pi pi-users" label="Co-propietarios" class="p-button-outlined p-button-sm" routerLink="owners"></button>
+          <button pButton icon="pi pi-list" label="Períodos" class="p-button-sm" routerLink="periods"></button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="col-12 md:col-4">
+          <p-card header="Reporte de Morosidad">
+            <p class="text-color-secondary text-sm">Visualiza los co-propietarios con pagos pendientes.</p>
+            <button pButton label="Ver morosidad" icon="pi pi-exclamation-triangle" severity="danger" class="w-full mt-2" routerLink="morosidad"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
+          <p-card header="Co-propietarios">
+            <p class="text-color-secondary text-sm">Gestión de co-propietarios, %, mora y datos de contacto.</p>
+            <button pButton label="Gestionar" icon="pi pi-users" class="w-full mt-2 p-button-outlined" routerLink="owners"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
+          <p-card header="Períodos de cobro">
+            <p class="text-color-secondary text-sm">Crear y gestionar períodos mensuales de alícuotas.</p>
+            <button pButton label="Períodos" icon="pi pi-calendar" class="w-full mt-2 p-button-outlined" routerLink="periods"></button>
+          </p-card>
+        </div>
+      </div>
+    </div>

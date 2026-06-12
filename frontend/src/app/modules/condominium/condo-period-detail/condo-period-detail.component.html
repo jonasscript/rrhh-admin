@@ -1,0 +1,198 @@
+<p-toast />
+    <p-confirmDialog />
+
+    @if (period) {
+      <div class="page">
+        <div class="page-header">
+          <div>
+            <a routerLink="/condominium/periods" class="back-link"><i class="pi pi-arrow-left mr-1"></i>Períodos</a>
+            <h2>{{ monthName }} {{ period.year }}</h2>
+            <p-tag [value]="period.status" [severity]="statusSeverity(period.status)" />
+          </div>
+          <div class="header-actions">
+            @if (period.status === 'DRAFT') {
+              <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="generate()" [loading]="generating"></button>
+            }
+            @if (period.aliquotPayments?.length && period.status !== 'CLOSED') {
+              <button pButton icon="pi pi-send" label="Enviar correos" severity="success" (click)="sendEmails()" [loading]="sending"></button>
+            }
+            @if (period.status === 'APPROVED') {
+              <button pButton icon="pi pi-lock" label="Cerrar período" severity="warning" (click)="confirmClose()"></button>
+            }
+          </div>
+        </div>
+
+        <!-- Period Summary -->
+        <div class="summary-grid">
+          <div class="summary-card">
+            <span class="label">Gastos fijos</span>
+            <span class="value">\${{ period.fixedExpenses | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-card">
+            <span class="label">Gastos variables</span>
+            <span class="value">\${{ period.variableExpenses | number:'1.2-2' }}</span>
+          </div>
+          <div class="summary-card total">
+            <span class="label">Total del mes</span>
+            <span class="value">\${{ period.totalExpenses | number:'1.2-2' }}</span>
+          </div>
+          @if (period.variableNotes) {
+            <div class="summary-card notes">
+              <span class="label">Notas variables</span>
+              <span class="value-sm">{{ period.variableNotes }}</span>
+            </div>
+          }
+        </div>
+
+        <!-- Payments Table -->
+        <p-table [value]="period.aliquotPayments || []" stripedRows responsiveLayout="scroll">
+          <ng-template pTemplate="header">
+            <tr>
+              <th>Depto.</th>
+              <th>Propietario</th>
+              <th>%</th>
+              <th>Alícuota</th>
+              <th>Mora</th>
+              <th>Total</th>
+              <th>Pagado</th>
+              <th>F. Pago</th>
+              <th>Comprobante</th>
+              <th>Estado</th>
+              <th style="width:130px">Acciones</th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-payment>
+            <tr>
+              <td><strong>{{ payment.owner?.apartmentNumber }}</strong></td>
+              <td>{{ payment.owner?.fullName }}</td>
+              <td>{{ payment.owner?.participationPct }}%</td>
+              <td>\${{ payment.aliquotAmount | number:'1.2-2' }}</td>
+              <td>
+                @if (payment.moraAtBilling > 0) {
+                  <span class="mora-txt">\${{ payment.moraAtBilling | number:'1.2-2' }}</span>
+                } @else { — }
+              </td>
+              <td><strong>\${{ payment.totalDue | number:'1.2-2' }}</strong></td>
+              <td>\${{ payment.amountPaid | number:'1.2-2' }}</td>
+              <td>{{ payment.paymentDate ? (payment.paymentDate | date:'dd/MM/yy') : '—' }}</td>
+              <td>
+                @if (payment.proofUrl) {
+                  <a [href]="payment.proofUrl" target="_blank" class="proof-link">
+                    <i class="pi pi-paperclip"></i> Ver
+                  </a>
+                } @else {
+                  <span class="text-color-secondary text-sm">Sin comprobante</span>
+                }
+              </td>
+              <td>
+                <p-tag [value]="paymentStatusLabel(payment.status)"
+                  [severity]="paymentStatusSeverity(payment.status)" />
+              </td>
+              <td>
+                <button pButton icon="pi pi-dollar" [rounded]="true" [text]="true"
+                  (click)="openPaymentDialog(payment)" pTooltip="Registrar pago"
+                  [disabled]="payment.status === 'PAID'"></button>
+                <button pButton icon="pi pi-upload" [rounded]="true" [text]="true" severity="info"
+                  (click)="openProofDialog(payment)" pTooltip="Subir comprobante"></button>
+                <button pButton icon="pi pi-file-pdf" [rounded]="true" [text]="true" severity="secondary"
+                  (click)="downloadPdf(payment)" pTooltip="Descargar PDF"></button>
+              </td>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="emptymessage">
+            <tr><td colspan="11" class="text-center p-4 text-color-secondary">
+              No hay alícuotas generadas. Haz clic en "Generar alícuotas" para calcularlas.
+            </td></tr>
+          </ng-template>
+        </p-table>
+      </div>
+    } @else {
+      <div class="text-center p-5">Cargando...</div>
+    }
+
+    <!-- Register Payment Dialog -->
+    <p-dialog [(visible)]="showPaymentDialog" header="Registrar Pago" [modal]="true" [style]="{width: '440px'}">
+      @if (selectedPayment) {
+        <div class="payment-summary">
+          <span><strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong> — {{ selectedPayment.owner?.fullName }}</span>
+          <span>Total: <strong>\${{ selectedPayment.totalDue | number:'1.2-2' }}</strong></span>
+          <span>Ya pagado: \${{ selectedPayment.amountPaid | number:'1.2-2' }}</span>
+          <span>Pendiente: <strong class="mora-txt">\${{ (selectedPayment.totalDue - selectedPayment.amountPaid) | number:'1.2-2' }}</strong></span>
+        </div>
+
+        <form [formGroup]="paymentForm" (ngSubmit)="registerPayment()">
+          <div class="field">
+            <label>Monto pagado *</label>
+            <p-inputNumber formControlName="amountPaid" [min]="0.01" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
+          </div>
+          <div class="field">
+            <label>Fecha de pago *</label>
+            <p-calendar formControlName="paymentDate" dateFormat="yy-mm-dd" [showIcon]="true" class="w-full" inputStyleClass="w-full" />
+          </div>
+          <div class="field">
+            <label>Mes al que corresponde * <small class="text-color-secondary">(YYYY-MM)</small></label>
+            <input pInputText formControlName="paymentMonth" placeholder="2024-08" class="w-full" />
+          </div>
+          <div class="field">
+            <label>Notas</label>
+            <input pInputText formControlName="notes" class="w-full" />
+          </div>
+          <div class="dialog-footer">
+            <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showPaymentDialog = false"></button>
+            <button pButton type="submit" label="Registrar pago" [loading]="saving" [disabled]="paymentForm.invalid"></button>
+          </div>
+        </form>
+      }
+    </p-dialog>
+
+    <!-- Upload Proof Dialog -->
+    <p-dialog [(visible)]="showProofDialog" header="Subir Comprobante de Pago" [modal]="true" [style]="{width: '480px'}">
+      @if (selectedPayment) {
+        <div class="proof-info">
+          <p><strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong> — {{ selectedPayment.owner?.fullName }}</p>
+          @if (selectedPayment.proofUrl) {
+            <div class="current-proof">
+              <p class="text-sm text-color-secondary">Comprobante actual:</p>
+              <a [href]="selectedPayment.proofUrl" target="_blank" class="proof-link">
+                <i class="pi pi-external-link mr-1"></i>Ver comprobante actual
+              </a>
+            </div>
+          }
+        </div>
+
+        <div class="upload-area" (dragover)="onDragOver($event)" (drop)="onDrop($event)">
+          @if (selectedFile) {
+            <div class="file-selected">
+              <i class="pi pi-file text-2xl"></i>
+              <span>{{ selectedFile.name }}</span>
+              <span class="file-size">{{ (selectedFile.size / 1024).toFixed(1) }} KB</span>
+              <button pButton icon="pi pi-times" [rounded]="true" [text]="true" severity="danger" (click)="clearFile()"></button>
+            </div>
+          } @else {
+            <div class="upload-placeholder">
+              <i class="pi pi-cloud-upload text-3xl text-color-secondary"></i>
+              <p>Arrastra el archivo aquí o</p>
+              <label class="upload-btn">
+                <input type="file" accept="image/*,.pdf" (change)="onFileSelect($event)" hidden />
+                <span>Seleccionar archivo</span>
+              </label>
+              <small class="text-color-secondary">JPG, PNG, PDF — máx. 5MB</small>
+            </div>
+          }
+        </div>
+
+        <div class="dialog-footer">
+          <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showProofDialog = false"></button>
+          <button pButton label="Subir comprobante" icon="pi pi-upload"
+            [loading]="uploadingProof" [disabled]="!selectedFile" (click)="uploadProof()"></button>
+        </div>
+
+        @if (selectedPayment.proofUrl) {
+          <div class="delete-proof">
+            <button pButton label="Eliminar comprobante actual" icon="pi pi-trash"
+              severity="danger" class="p-button-outlined p-button-sm"
+              (click)="deleteProof()" [loading]="deletingProof"></button>
+          </div>
+        }
+      }
+    </p-dialog>

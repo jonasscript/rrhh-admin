@@ -1,0 +1,14 @@
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; }
+    .page-header h2 { margin: 0 0 4px; color: #1e3a5f; font-size: 1.5rem; }
+    .header-actions { display: flex; gap: .5rem; align-items: center; }
+    .pct-badge { font-size: .82rem; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+    .pct-ok { background: #d1fae5; color: #065f46; }
+    .pct-warn { background: #fef3c7; color: #92400e; }
+    .mora-badge { background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: .85rem; }
+    .field { margin-bottom: 1rem; } label { display: block; font-weight: 500; margin-bottom: .4rem; font-size: .9rem; }
+    .dialog-footer { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
+    .import-summary { display: flex; flex-direction: column; gap: .75rem; }
+    .summary-item { display: flex; align-items: center; gap: .6rem; font-size: 1rem; padding: .5rem .75rem; border-radius: 8px; }
+    .summary-item.inserted { background: #d1fae5; color: #065f46; }
+    .summary-item.updated  { background: #dbeafe; color: #1e40af; }
+    .summary-item.errors   { background: #fef3c7; color: #92400e; }

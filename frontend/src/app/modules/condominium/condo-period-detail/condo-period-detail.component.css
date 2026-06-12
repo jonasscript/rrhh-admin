@@ -1,0 +1,27 @@
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem; }
+    .page-header h2 { margin: .25rem 0; color: #1e3a5f; font-size: 1.4rem; }
+    .back-link { font-size: .85rem; color: #6b7280; text-decoration: none; display: inline-flex; align-items: center; }
+    .back-link:hover { color: #1e3a5f; }
+    .header-actions { display: flex; gap: .5rem; align-items: center; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .summary-card { background: white; border-radius: 10px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .summary-card.total { border-left: 4px solid #1e3a5f; }
+    .summary-card.notes { grid-column: 1 / -1; }
+    .label { display: block; font-size: .8rem; color: #6b7280; margin-bottom: 4px; }
+    .value { font-size: 1.3rem; font-weight: 700; color: #1e3a5f; }
+    .value-sm { font-size: .9rem; color: #374151; }
+    .mora-txt { color: #b91c1c; font-weight: 600; }
+    .proof-link { color: #3b82f6; text-decoration: none; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; }
+    .proof-link:hover { text-decoration: underline; }
+    .field { margin-bottom: 1rem; } label { display: block; font-weight: 500; margin-bottom: .4rem; font-size: .9rem; }
+    .dialog-footer { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
+    .payment-summary { background: #f8fafc; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+    .upload-area { border: 2px dashed #d1d5db; border-radius: 10px; padding: 2rem; margin: 1rem 0; transition: border-color .2s; }
+    .upload-area:hover { border-color: #3b82f6; }
+    .upload-placeholder { text-align: center; display: flex; flex-direction: column; align-items: center; gap: .5rem; }
+    .upload-btn { display: inline-block; cursor: pointer; padding: .4rem 1rem; background: #3b82f6; color: white; border-radius: 6px; font-size: .85rem; }
+    .file-selected { display: flex; align-items: center; gap: .75rem; }
+    .file-size { font-size: .8rem; color: #6b7280; }
+    .current-proof { background: #eff6ff; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; }
+    .proof-info { margin-bottom: .5rem; }
+    .delete-proof { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid #e5e7eb; }

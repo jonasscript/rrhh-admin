@@ -1,0 +1,75 @@
+/* ── Obligaciones Laborales tab ────────────────────────────── */
+.obl-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.obl-section-header i {
+  font-size: 1.25rem;
+  color: #1f5faa;
+  margin-top: 0.15rem;
+}
+
+.obl-section-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #13253f;
+}
+
+.obl-section-header p { margin: 0.2rem 0 0; color: #5f6f85; font-size: 0.84rem; }
+
+.obl-field { display: flex; flex-direction: column; margin-bottom: 0.85rem; }
+.obl-field label { font-size: 0.84rem; font-weight: 600; color: #1d3557; margin-bottom: 0.4rem; }
+.obl-hint { font-size: 0.78rem; font-weight: 400; color: #6b7f9a; }
+
+.obl-checkbox-field label:first-child { margin-bottom: 0.5rem; }
+.obl-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.obl-checkbox-label { font-weight: 500 !important; font-size: 0.88rem !important; margin: 0 !important; }
+
+.obl-textarea {
+  border-radius: 10px;
+  border: 1px solid #d0ddef;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.88rem;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+
+.obl-textarea:focus { border-color: #1f5faa; }
+
+/* Summary box */
+.obl-summary {
+  margin-top: 1.25rem;
+  border-radius: 10px;
+  border: 1px solid #d7e8ff;
+  background: #f4f8ff;
+  overflow: hidden;
+}
+
+.obl-sum-title {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1f5faa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e7f0ff;
+}
+
+.obl-sum-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.86rem;
+  border-bottom: 1px solid #e4eef8;
+}
+
+.obl-sum-row:last-child { border-bottom: none; }
+.obl-sum-row.separator { border-top: 1px dashed #bcd5f0; font-weight: 600; }
+.obl-sum-row.employer-row { color: #1f5faa; }
+.obl-sum-row.total-row { font-weight: 700; background: #d4e8ff; color: #13253f; }
+
+.obl-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }

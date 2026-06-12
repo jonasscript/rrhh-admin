@@ -1,0 +1,64 @@
+<p-toast />
+    <div class="page">
+      <div class="page-header">
+        <h2>Períodos de Alícuotas</h2>
+        <button pButton icon="pi pi-plus" label="Nuevo período" (click)="showDialog = true"></button>
+      </div>
+
+      <p-table [value]="periods" [loading]="loading" stripedRows>
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Período</th>
+            <th>Gastos fijos</th>
+            <th>Gastos variables</th>
+            <th>Total</th>
+            <th>Co-propietarios</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-p>
+          <tr>
+            <td><strong>{{ monthName(p.month) }} {{ p.year }}</strong></td>
+            <td>\${{ p.fixedExpenses | number:'1.2-2' }}</td>
+            <td>\${{ p.variableExpenses | number:'1.2-2' }}</td>
+            <td><strong>\${{ p.totalExpenses | number:'1.2-2' }}</strong></td>
+            <td>{{ p._count?.aliquotPayments || 0 }}</td>
+            <td><p-tag [value]="p.status" [severity]="severity(p.status)" /></td>
+            <td>
+              <button pButton icon="pi pi-eye" [rounded]="true" [text]="true" [routerLink]="['/condominium/periods', p.id]" pTooltip="Ver detalle"></button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr><td colspan="7" class="text-center p-4">No hay períodos creados</td></tr>
+        </ng-template>
+      </p-table>
+    </div>
+
+    <p-dialog [(visible)]="showDialog" header="Nuevo Período" [modal]="true" [style]="{width:'440px'}">
+      <form [formGroup]="form" (ngSubmit)="create()">
+        <div class="grid">
+          <div class="col-6 field">
+            <label>Mes *</label>
+            <p-inputNumber formControlName="month" [min]="1" [max]="12" class="w-full" inputStyleClass="w-full" />
+          </div>
+          <div class="col-6 field">
+            <label>Año *</label>
+            <p-inputNumber formControlName="year" [min]="2020" class="w-full" inputStyleClass="w-full" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Gastos variables del mes</label>
+          <p-inputNumber formControlName="variableExpenses" [min]="0" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="field">
+          <label>Descripción gastos variables</label>
+          <textarea pInputTextarea formControlName="variableNotes" class="w-full" rows="3" placeholder="Ej: Reparación bomba de agua, limpieza extra..."></textarea>
+        </div>
+        <div class="dialog-footer">
+          <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showDialog = false"></button>
+          <button pButton type="submit" label="Crear período" [loading]="saving" [disabled]="form.invalid"></button>
+        </div>
+      </form>
+    </p-dialog>

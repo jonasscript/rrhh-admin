@@ -1,0 +1,53 @@
+<p-toast />
+    <p-confirmDialog />
+
+    <div class="page-header">
+      <h1 class="page-title">Comunicados</h1>
+      <a routerLink="nuevo">
+        <p-button label="Nuevo comunicado" icon="pi pi-plus" />
+      </a>
+    </div>
+
+    <!-- Filtro -->
+    <div class="mb-3">
+      <p-dropdown [(ngModel)]="filterStatus" (onChange)="load()"
+                  [options]="[
+                    {label:'Todos',      value:''},
+                    {label:'Borrador',   value:'DRAFT'},
+                    {label:'Programado', value:'SCHEDULED'},
+                    {label:'Enviado',    value:'SENT'},
+                  ]"
+                  optionLabel="label" optionValue="value" />
+    </div>
+
+    <p-table [value]="announcements()" [loading]="loading()" responsiveLayout="scroll" styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Título</th>
+          <th>Tipo</th>
+          <th>Estado</th>
+          <th>Creado</th>
+          <th>Enviado</th>
+          <th style="width:120px">Acciones</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-a>
+        <tr>
+          <td>{{ a.title }}</td>
+          <td>{{ a.type }}</td>
+          <td><span class="status-badge {{ a.status }}">{{ a.status }}</span></td>
+          <td>{{ a.created_at | date:'dd/MM/yyyy HH:mm' }}</td>
+          <td>{{ a.sent_at ? (a.sent_at | date:'dd/MM/yyyy HH:mm') : '—' }}</td>
+          <td>
+            @if (a.status !== 'SENT') {
+              <p-button icon="pi pi-send" [text]="true" severity="success"
+                        pTooltip="Enviar ahora" (onClick)="sendNow(a.id)" />
+            }
+            @if (a.status !== 'SENT') {
+              <p-button icon="pi pi-trash" [text]="true" severity="danger"
+                        pTooltip="Eliminar" (onClick)="delete(a.id)" />
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>

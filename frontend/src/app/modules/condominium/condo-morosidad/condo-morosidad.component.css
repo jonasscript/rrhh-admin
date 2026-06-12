@@ -1,0 +1,4 @@
+.page-header { margin-bottom: 1.5rem; } .page-header h2 { margin: 0; color: #1e3a5f; font-size: 1.5rem; }
+    .mora-badge { background: #fee2e2; color: #b91c1c; padding: 3px 10px; border-radius: 10px; font-weight: 600; }
+    .empty-state { text-align: center; padding: 3rem; color: #6b7280; display: flex; flex-direction: column; align-items: center; gap: .75rem; }
+    .total-row { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; padding: 1rem; background: #fff7ed; border-radius: 8px; margin-top: 1rem; font-size: 1rem; }

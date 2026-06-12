@@ -1,0 +1,75 @@
+.cat-page { padding: 1.5rem 2rem; }
+
+.cat-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--p-primary-color, #6366f1); margin: 0 0 .25rem; }
+.page-title { font-size: 1.6rem; font-weight: 700; margin: 0 0 .25rem; }
+.subtitle { color: var(--p-text-muted-color, #6b7280); margin: 0; }
+
+.cat-table { border-radius: .5rem; overflow: hidden; }
+
+.item-name { display: flex; align-items: center; gap: .4rem; font-weight: 600; }
+.item-code { font-size: .72rem; color: var(--p-text-muted-color, #9ca3af); font-family: monospace; }
+
+.sys-badge {
+  display: inline-flex; align-items: center;
+  background: #f0f0f0; border-radius: 4px; padding: 0 .35rem; font-size: .7rem;
+  color: #888;
+}
+
+.rate-val { font-weight: 600; color: var(--p-primary-color, #6366f1); }
+.text-muted { color: var(--p-text-muted-color, #9ca3af); font-size: .85rem; }
+.row-inactive td { opacity: .55; }
+
+/* Dialog form */
+.cat-form { display: flex; flex-direction: column; gap: 1rem; padding: .5rem 0; }
+.f-field { display: flex; flex-direction: column; gap: .35rem; flex: 1; }
+.f-field--sm { max-width: 180px; }
+.f-field label { font-size: .85rem; font-weight: 600; }
+.f-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.req { color: #ef4444; }
+.text-sm { font-size: .82rem; }
+
+/* Payment date section */
+.payment-date-section {
+  background: #f8faff;
+  border: 1px solid #e0e7ff;
+  border-radius: 8px;
+  padding: .85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.f-check-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.payment-preview {
+  display: inline-flex;
+  align-items: center;
+  background: #e0e7ff;
+  color: #3730a3;
+  border-radius: 8px;
+  padding: .4rem .8rem;
+  font-size: .85rem;
+}
+
+/* Table chip for payment date */
+.pay-date-chip {
+  display: inline-flex;
+  align-items: center;
+  background: #e0e7ff;
+  color: #4338ca;
+  border-radius: 20px;
+  padding: .2rem .65rem;
+  font-size: .8rem;
+  font-weight: 600;
+}

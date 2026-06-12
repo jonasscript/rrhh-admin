@@ -1,0 +1,180 @@
+<p-toast />
+
+<div class="page-header">
+      <h1 class="page-title">{{ emp()?.first_name }} {{ emp()?.last_name }}</h1>
+      <div class="flex gap-2">
+        <a [routerLink]="['..', emp()?.id, 'edit']">
+          <p-button icon="pi pi-pencil" label="Editar" severity="secondary" />
+        </a>
+        <a routerLink="/employees">
+          <p-button icon="pi pi-arrow-left" label="Volver" [text]="true" />
+        </a>
+      </div>
+    </div>
+
+    @if (emp(); as e) {
+      <p-tabView>
+        <!-- Datos personales -->
+        <p-tabPanel header="Datos personales">
+          <div class="grid mt-2">
+            <div class="col-12 md:col-6">
+              <p-card>
+                <div class="flex flex-column gap-2">
+                  <div><span class="font-semibold">Cédula:</span> {{ e.cedula }}</div>
+                  <div><span class="font-semibold">Email:</span> {{ e.email }}</div>
+                  <div><span class="font-semibold">Teléfono:</span> {{ e.phone || '—' }}</div>
+                  <div><span class="font-semibold">Dirección:</span> {{ e.address || '—' }}</div>
+                </div>
+              </p-card>
+            </div>
+            <div class="col-12 md:col-6">
+              <p-card>
+                <div class="flex flex-column gap-2">
+                  <div><span class="font-semibold">Departamento:</span> {{ e.department_name || '—' }}</div>
+                  <div><span class="font-semibold">Cargo:</span> {{ e.position }}</div>
+                  <div><span class="font-semibold">Contrato:</span> {{ e.contract_type }}</div>
+                  <div><span class="font-semibold">Ingreso:</span> {{ e.start_date | date:'dd/MM/yyyy' }}</div>
+                  <div><span class="font-semibold">Salario:</span> {{ e.base_salary | currency:'USD':'symbol':'1.2-2' }}</div>
+                  <div><span class="font-semibold">Estado:</span>
+                    <span class="status-badge {{ e.status }} ml-2">{{ e.status }}</span>
+                  </div>
+                </div>
+              </p-card>
+            </div>
+          </div>
+        </p-tabPanel>
+
+        <!-- Obligaciones Laborales -->
+        <p-tabPanel header="Obligaciones Laborales">
+          @if (obligations(); as o) {
+            <form [formGroup]="oblForm" (ngSubmit)="saveObligations()" class="obl-form mt-2">
+              <p-card>
+                <div class="obl-section-header">
+                  <i class="pi pi-building"></i>
+                  <div>
+                    <h3>Aportes Patronales al IESS</h3>
+                    <p>Configuración de obligaciones que el empleador gestiona y remite al IESS.</p>
+                  </div>
+                </div>
+
+                <div class="grid mt-3">
+                  <div class="col-12 md:col-4 obl-field">
+                    <label for="iessQuirofario">Préstamo quirografario IESS <span class="obl-hint">(mensual)</span></label>
+                    <p-inputNumber
+                      inputId="iessQuirofario"
+                      formControlName="iessQuirofario"
+                      mode="currency" currency="USD"
+                      [minFractionDigits]="2" [min]="0"
+                      inputStyleClass="w-full" class="w-full"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div class="col-12 md:col-4 obl-field">
+                    <label for="iessHipotecario">Préstamo hipotecario IESS <span class="obl-hint">(mensual)</span></label>
+                    <p-inputNumber
+                      inputId="iessHipotecario"
+                      formControlName="iessHipotecario"
+                      mode="currency" currency="USD"
+                      [minFractionDigits]="2" [min]="0"
+                      inputStyleClass="w-full" class="w-full"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <div class="col-12 md:col-4 obl-field obl-checkbox-field">
+                    <label>Fondo de reserva</label>
+                    <div class="obl-checkbox-row">
+                      <p-checkbox inputId="fondosReservaAplica" formControlName="fondosReservaAplica" [binary]="true" />
+                      <label for="fondosReservaAplica" class="obl-checkbox-label">
+                        Activo <span class="obl-hint">(8.33% mensual)</span>
+                      </label>
+                    </div>
+                    <span class="obl-hint">Aplica desde el mes 13 o se puede activar manualmente</span>
+                  </div>
+
+                  <div class="col-12 obl-field">
+                    <label for="oblNotes">Notas internas</label>
+                    <textarea id="oblNotes" formControlName="notes" class="obl-textarea w-full" rows="2"
+                              placeholder="Observaciones sobre los préstamos u obligaciones..."></textarea>
+                  </div>
+                </div>
+
+                <!-- Resumen de costos -->
+                <div class="obl-summary">
+                  <div class="obl-sum-title">Resumen de costos al IESS este empleado</div>
+                  <div class="obl-sum-row">
+                    <span>Aporte empleado (9.45%)</span>
+                    <span>{{ e.base_salary * 0.0945 | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row" *ngIf="(oblForm.value.iessQuirofario || 0) > 0">
+                    <span>Préstamo quirografario</span>
+                    <span>{{ oblForm.value.iessQuirofario | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row" *ngIf="(oblForm.value.iessHipotecario || 0) > 0">
+                    <span>Préstamo hipotecario</span>
+                    <span>{{ oblForm.value.iessHipotecario | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row separator">
+                    <span>Subtotal empleado → IESS</span>
+                    <span>{{ (e.base_salary * 0.0945 + (oblForm.value.iessQuirofario||0) + (oblForm.value.iessHipotecario||0)) | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row employer-row">
+                    <span>Aporte patronal IESS (11.15%)</span>
+                    <span>{{ e.base_salary * 0.1115 | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row employer-row" *ngIf="oblForm.value.fondosReservaAplica">
+                    <span>Fondo de reserva (8.33%)</span>
+                    <span>{{ e.base_salary * 0.0833 | currency:'USD':'symbol':'1.2-2' }}</span>
+                  </div>
+                  <div class="obl-sum-row total-row">
+                    <span>Total planilla IESS del empleado</span>
+                    <span>{{
+                      (e.base_salary * 0.0945
+                      + (oblForm.value.iessQuirofario||0)
+                      + (oblForm.value.iessHipotecario||0)
+                      + e.base_salary * 0.1115
+                      + (oblForm.value.fondosReservaAplica ? e.base_salary * 0.0833 : 0))
+                      | currency:'USD':'symbol':'1.2-2'
+                    }}</span>
+                  </div>
+                </div>
+
+                <div class="obl-actions">
+                  <p-button
+                    type="submit"
+                    label="Guardar obligaciones"
+                    icon="pi pi-check"
+                    [loading]="savingObl()"
+                  />
+                </div>
+              </p-card>
+            </form>
+          }
+        </p-tabPanel>
+
+        <!-- Últimas nóminas -->
+        <p-tabPanel header="Nóminas recientes">
+          <p-table [value]="payrolls()" responsiveLayout="scroll" styleClass="p-datatable-sm">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>Período</th>
+                <th>Bruto</th>
+                <th>IESS emp.</th>
+                <th>Neto</th>
+                <th>Estado</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-p>
+              <tr>
+                <td>{{ p.month }}/{{ p.year }}</td>
+                <td>{{ p.gross_pay | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td>{{ p.iess_employee | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td>{{ p.net_pay | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td><span class="status-badge {{ p.status }}">{{ p.status }}</span></td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </p-tabPanel>
+      </p-tabView>
+    }

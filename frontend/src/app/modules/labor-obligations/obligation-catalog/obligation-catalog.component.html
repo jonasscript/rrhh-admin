@@ -1,0 +1,218 @@
+<p-toast />
+<p-confirmDialog />
+
+<section class="cat-page">
+
+  <!-- Header -->
+  <div class="cat-hero">
+    <div>
+      <p class="eyebrow">Configuración del sistema</p>
+      <h1 class="page-title">Catálogo de Obligaciones</h1>
+      <p class="subtitle">Define los tipos de obligaciones laborales que aplican en tu organización.</p>
+    </div>
+    <p-button label="Nueva obligación" icon="pi pi-plus" (onClick)="openCreate()" />
+  </div>
+
+  <!-- Table -->
+  <p-table
+    [value]="catalog()"
+    [loading]="loading()"
+    responsiveLayout="scroll"
+    styleClass="p-datatable-sm cat-table"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th>Nombre</th>
+        <th>Tipo cálculo</th>
+        <th class="text-right">Valor / tasa</th>
+        <th>Pagador</th>
+        <th>Destinatario</th>
+        <th>Fecha de pago</th>
+        <th class="text-center">Estado</th>
+        <th class="text-center">Acciones</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-item>
+      <tr [class.row-inactive]="!item.is_active">
+        <td>
+          <div class="item-name">
+            {{ item.name }}
+            @if (item.is_system) {
+              <span class="sys-badge" pTooltip="Tasa de sistema — solo lectura"><i class="pi pi-lock"></i></span>
+            }
+          </div>
+          <span class="item-code">{{ item.code }}</span>
+        </td>
+        <td>
+          <p-tag
+            [value]="calcTypeLabel(item.calc_type)"
+            [severity]="item.calc_type === 'PERCENTAGE' ? 'info' : 'secondary'"
+          />
+        </td>
+        <td class="text-right">
+          @if (item.calc_type === 'PERCENTAGE' && item.default_value != null) {
+            <span class="rate-val">{{ item.default_value * 100 | number:'1.2-2' }}%</span>
+          } @else if (item.calc_type === 'FIXED') {
+            <span class="text-muted">Por empleado</span>
+          } @else {
+            <span class="text-muted">—</span>
+          }
+        </td>
+        <td><p-tag [value]="payerLabel(item.payer)" severity="secondary" /></td>
+        <td>{{ recipientLabel(item.recipient) }}</td>
+        <td>
+          @if (item.payment_mode === 'LUMP_SUM' && item.payment_month) {
+            <span class="pay-date-chip">
+              <i class="pi pi-calendar mr-1"></i>
+              {{ monthOptions[item.payment_month - 1].label }}
+              @if (item.payment_day) { {{ item.payment_day }} }
+            </span>
+          } @else {
+            <span class="text-muted">Mensual</span>
+          }
+        </td>
+        <td class="text-center">
+          @if (item.is_active) {
+            <p-tag value="Activa" severity="success" />
+          } @else {
+            <p-tag value="Inactiva" severity="danger" />
+          }
+        </td>
+        <td class="text-center">
+          <p-button icon="pi pi-pencil" [text]="true" severity="secondary"
+                    pTooltip="Editar" (onClick)="openEdit(item)" />
+          @if (!item.is_system && item.is_active) {
+            <p-button icon="pi pi-ban" [text]="true" severity="danger"
+                      pTooltip="Desactivar" (onClick)="confirmDeactivate(item)" />
+          }
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr><td colspan="8" class="text-center p-4">Sin obligaciones en el catálogo.</td></tr>
+    </ng-template>
+  </p-table>
+</section>
+
+<!-- Create / Edit Dialog -->
+<p-dialog
+  [visible]="dialogVisible()"
+  (visibleChange)="dialogVisible.set($event)"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '500px' }"
+  [header]="editingId() ? 'Editar obligación' : 'Nueva obligación'"
+>
+  <form [formGroup]="form" class="cat-form">
+
+    <div class="f-field">
+      <label>Nombre <span class="req">*</span></label>
+      <input pInputText formControlName="name" placeholder="Ej. Aporte IESS Empleado" class="w-full" />
+    </div>
+
+    <div class="f-field">
+      <label>Descripción</label>
+      <textarea pInputTextarea formControlName="description" rows="2" class="w-full"
+                placeholder="Breve descripción..."></textarea>
+    </div>
+
+    <div class="f-row">
+      <div class="f-field">
+        <label>Tipo de cálculo <span class="req">*</span></label>
+        <p-selectButton formControlName="calc_type" [options]="calcTypeOptions"
+                        optionLabel="label" optionValue="value" />
+      </div>
+      <div class="f-field">
+        <label>
+          @if (form.value.calc_type === 'PERCENTAGE') { Tasa (%) }
+          @else { Monto fijo }
+        </label>
+        @if (form.value.calc_type === 'PERCENTAGE') {
+          <p-inputNumber formControlName="default_value"
+                         suffix="%" [minFractionDigits]="2" [min]="0" [max]="100"
+                         class="w-full" inputStyleClass="w-full" />
+        } @else {
+          <span class="text-muted text-sm mt-1">Se configura por empleado individualmente.</span>
+        }
+      </div>
+    </div>
+
+    <div class="f-row">
+      <div class="f-field">
+        <label>Pagador <span class="req">*</span></label>
+        <p-selectButton formControlName="payer" [options]="payerOptions"
+                        optionLabel="label" optionValue="value" />
+      </div>
+      <div class="f-field">
+        <label>Destinatario <span class="req">*</span></label>
+        <p-selectButton formControlName="recipient" [options]="recipientOptions"
+                        optionLabel="label" optionValue="value" />
+      </div>
+    </div>
+
+    <div class="f-field f-field--sm">
+      <label>Orden de visualización</label>
+      <p-inputNumber formControlName="display_order" [min]="0" [max]="999"
+                     class="w-full" inputStyleClass="w-full" />
+    </div>
+
+    <!-- Modo de pago -->
+    <div class="f-field">
+      <label>Modo de pago</label>
+      <p-selectButton formControlName="payment_mode" [options]="paymentModeOptions"
+                      optionLabel="label" optionValue="value" />
+    </div>
+
+    <!-- Fecha de pago: solo cuando payment_mode = LUMP_SUM -->
+    @if (form.value.payment_mode === 'LUMP_SUM' || form.getRawValue().payment_mode === 'LUMP_SUM') {
+      <div class="payment-date-section">
+        <div class="f-check-row">
+          <p-checkbox formControlName="has_payment_date" [binary]="true"
+                      inputId="has_payment_date" />
+          <label for="has_payment_date" class="ml-2 cursor-pointer font-medium">
+            Configurar fecha de pago
+          </label>
+        </div>
+
+        @if (form.value.has_payment_date) {
+          <div class="f-field">
+            <label>Fecha de pago anual <span class="req">*</span></label>
+            <p-calendar
+              formControlName="payment_date"
+              [showIcon]="true"
+              [iconDisplay]="'input'"
+              dateFormat="dd/mm"
+              placeholder="Selecciona el día y mes"
+              [showButtonBar]="false"
+              [readonlyInput]="false"
+              styleClass="w-full"
+              inputStyleClass="w-full"
+            />
+            <small class="text-muted">
+              <i class="pi pi-info-circle mr-1"></i>
+              Selecciona el día y mes de pago. El año se ignora — es una fecha anual recurrente.
+            </small>
+          </div>
+          @if (form.value.payment_date) {
+            <div class="payment-preview">
+              <i class="pi pi-calendar-check mr-1"></i>
+              Pago anual el <strong>
+                {{ (form.value.payment_date | date:'d') }} de
+                {{ (form.value.payment_date | date:'MMMM':'':'es') }}
+              </strong>
+            </div>
+          }
+        }
+      </div>
+    }
+
+  </form>
+
+  <ng-template pTemplate="footer">
+    <p-button label="Cancelar" icon="pi pi-times" severity="secondary" [text]="true"
+              (onClick)="dialogVisible.set(false)" />
+    <p-button label="Guardar" icon="pi pi-check" [loading]="saving()" (onClick)="save()" />
+  </ng-template>
+</p-dialog>

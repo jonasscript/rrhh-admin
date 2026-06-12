@@ -1,0 +1,155 @@
+<p-toast />
+
+    <div class="page">
+      <div class="page-header">
+        <div>
+          <h2>Co-propietarios</h2>
+          <span class="pct-badge" [class.pct-ok]="totalPct === 100" [class.pct-warn]="totalPct !== 100">
+            Participación total: {{ totalPct }}%
+            @if (totalPct !== 100) { <i class="pi pi-exclamation-triangle ml-1"></i> }
+          </span>
+        </div>
+        <div class="header-actions">
+          <!-- Input oculto para selección de archivo Excel -->
+          <input #xlsxInput type="file" accept=".xlsx,.xls" hidden (change)="onImportFile($event)" />
+          <button pButton icon="pi pi-file-excel" label="Importar Excel"
+            severity="secondary" [loading]="importing"
+            (click)="xlsxInput.click()"></button>
+          <button pButton icon="pi pi-plus" label="Nuevo co-propietario" (click)="openDialog()"></button>
+        </div>
+      </div>
+
+      <p-table [value]="owners" [loading]="loading" stripedRows responsiveLayout="scroll">
+        <ng-template pTemplate="header">
+          <tr>
+            <th>Depto.</th>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Teléfono</th>
+            <th>% Participación</th>
+            <th>Mora</th>
+            <th>Estado</th>
+            <th style="width:160px">Acciones</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-owner>
+          <tr>
+            <td><strong>{{ owner.apartmentNumber }}</strong></td>
+            <td>{{ owner.fullName }}</td>
+            <td>{{ owner.email }}</td>
+            <td>{{ owner.phone || '—' }}</td>
+            <td>{{ owner.participationPct }}%</td>
+            <td>
+              @if (owner.moraAmount > 0) {
+                <span class="mora-badge">\${{ owner.moraAmount | number:'1.2-2' }}</span>
+              } @else {
+                <span class="text-color-secondary text-sm">Sin mora</span>
+              }
+            </td>
+            <td>
+              <p-tag [value]="owner.isActive ? 'Activo' : 'Inactivo'" [severity]="owner.isActive ? 'success' : 'danger'" />
+            </td>
+            <td>
+              <button pButton icon="pi pi-pencil" [rounded]="true" [text]="true" (click)="openDialog(owner)" pTooltip="Editar"></button>
+              <button pButton icon="pi pi-power-off" [rounded]="true" [text]="true"
+                [severity]="owner.isActive ? 'danger' : 'success'"
+                (click)="toggleOwner(owner)" [pTooltip]="owner.isActive ? 'Desactivar' : 'Activar'"></button>
+              <button pButton icon="pi pi-dollar" [rounded]="true" [text]="true" severity="warning" (click)="openMoraDialog(owner)" pTooltip="Ajustar mora"></button>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr><td colspan="8" class="text-center p-4">No hay co-propietarios registrados</td></tr>
+        </ng-template>
+      </p-table>
+    </div>
+
+    <!-- Import Result Dialog -->
+    <p-dialog [(visible)]="showImportResult" header="Resultado de la Importación"
+      [modal]="true" [style]="{width: '500px'}">
+      @if (importResult) {
+        <div class="import-summary">
+          <div class="summary-item inserted">
+            <i class="pi pi-plus-circle"></i>
+            <span><strong>{{ importResult.inserted }}</strong> nuevos propietarios</span>
+          </div>
+          <div class="summary-item updated">
+            <i class="pi pi-refresh"></i>
+            <span><strong>{{ importResult.updated }}</strong> actualizados</span>
+          </div>
+          @if (importResult.errors.length) {
+            <div class="summary-item errors">
+              <i class="pi pi-exclamation-triangle"></i>
+              <span><strong>{{ importResult.errors.length }}</strong> filas con errores</span>
+            </div>
+            <p-table [value]="importResult.errors" styleClass="p-datatable-sm mt-2">
+              <ng-template pTemplate="header">
+                <tr><th>Fila</th><th>Depto.</th><th>Motivo</th></tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-e>
+                <tr><td>{{ e.row }}</td><td>{{ e.unit }}</td><td>{{ e.reason }}</td></tr>
+              </ng-template>
+            </p-table>
+          }
+        </div>
+        <div class="dialog-footer">
+          <button pButton label="Cerrar" (click)="showImportResult = false"></button>
+        </div>
+      }
+    </p-dialog>
+
+    <!-- Owner Form Dialog -->
+    <p-dialog [(visible)]="showDialog" [header]="editingOwner ? 'Editar Co-propietario' : 'Nuevo Co-propietario'"
+      [modal]="true" [style]="{width: '480px'}">
+      <form [formGroup]="form" (ngSubmit)="save()">
+        <div class="field">
+          <label>N° de Departamento *</label>
+          <input pInputText formControlName="apartmentNumber" class="w-full" placeholder="Ej: 101, A-3" />
+        </div>
+        <div class="field">
+          <label>Nombre completo *</label>
+          <input pInputText formControlName="fullName" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Correo electrónico *</label>
+          <input pInputText formControlName="email" type="email" class="w-full" />
+        </div>
+        <div class="field">
+          <label>Teléfono</label>
+          <input pInputText formControlName="phone" class="w-full" />
+        </div>
+        <div class="field">
+          <label>% de Participación *</label>
+          <p-inputNumber formControlName="participationPct" [min]="0.01" [max]="100"
+            [minFractionDigits]="2" [maxFractionDigits]="2" suffix="%" class="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="dialog-footer">
+          <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showDialog = false"></button>
+          <button pButton type="submit" label="Guardar" [loading]="saving" [disabled]="form.invalid"></button>
+        </div>
+      </form>
+    </p-dialog>
+
+    <!-- Mora Adjustment Dialog -->
+    <p-dialog [(visible)]="showMoraDialog" header="Ajustar Mora" [modal]="true" [style]="{width: '380px'}">
+      @if (moraOwner) {
+        <p><strong>{{ moraOwner.fullName }}</strong> — Depto. {{ moraOwner.apartmentNumber }}</p>
+        <p>Mora actual: <strong class="mora-badge">\${{ moraOwner.moraAmount | number:'1.2-2' }}</strong></p>
+        <div class="field">
+          <label>Operación</label>
+          <select class="w-full p-inputtext" [(ngModel)]="moraOperation">
+            <option value="ADD">Agregar</option>
+            <option value="SUBTRACT">Restar</option>
+            <option value="SET">Establecer valor exacto</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Monto</label>
+          <p-inputNumber [(ngModel)]="moraAmount" [min]="0" [minFractionDigits]="2" prefix="$" class="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="dialog-footer">
+          <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showMoraDialog = false"></button>
+          <button pButton label="Aplicar" (click)="applyMora()" [loading]="saving"></button>
+        </div>
+      }
+    </p-dialog>

@@ -1,0 +1,18 @@
+<div class="dashboard">
+      <h2 class="page-title">Dashboard</h2>
+      <div class="grid">
+        <div class="col-12 md:col-6 lg:col-3" *ngFor="let stat of stats">
+          <p-card styleClass="stat-card">
+            <div class="stat-content">
+              <div class="stat-info">
+                <span class="stat-label">{{ stat.label }}</span>
+                <span class="stat-value">{{ stat.value }}</span>
+              </div>
+              <div class="stat-icon" [style.background]="stat.color">
+                <i [class]="'pi ' + stat.icon"></i>
+              </div>
+            </div>
+          </p-card>
+        </div>
+      </div>
+    </div>

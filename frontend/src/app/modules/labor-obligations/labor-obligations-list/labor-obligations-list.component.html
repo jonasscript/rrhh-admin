@@ -1,0 +1,247 @@
+<p-toast />
+
+<section class="obl-page">
+
+  <!-- Hero -->
+  <div class="obl-hero">
+    <div>
+      <p class="eyebrow">Gestión de costos patronales</p>
+      <h1 class="page-title">Obligaciones Laborales</h1>
+      <p class="subtitle">Administra las obligaciones del sistema y por colaborador.</p>
+    </div>
+    <a routerLink="catalog">
+      <p-button icon="pi pi-cog" label="Catálogo" severity="secondary" [text]="true"
+                pTooltip="Administrar catálogo de obligaciones" />
+    </a>
+    <a routerLink="payments">
+      <p-button icon="pi pi-list" label="Historial de pagos" severity="secondary" [text]="true"
+                pTooltip="Ver pagos mensuales de obligaciones por nómina" />
+    </a>
+  </div>
+
+  <!-- Stats (dynamic) -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <span class="stat-label">Costo total laboral / mes</span>
+      <span class="stat-value">{{ totalIessMonthly() | currency:'USD':'symbol':'1.2-2' }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Costo patronal / mes</span>
+      <span class="stat-value">{{ totalEmployerMonthly() | currency:'USD':'symbol':'1.2-2' }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Deducciones empleados / mes</span>
+      <span class="stat-value">{{ totalEmployeeDeductions() | currency:'USD':'symbol':'1.2-2' }}</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Empleados con fondo de reserva</span>
+      <span class="stat-value accent">{{ countFondos() }}</span>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="obl-toolbar">
+    <span class="p-input-icon-left search-wrap">
+      <i class="pi pi-search"></i>
+      <input pInputText [(ngModel)]="search" (keyup.enter)="onSearch()"
+             placeholder="Buscar empleado..." class="search-input" />
+    </span>
+    <p-button icon="pi pi-refresh" [text]="true" pTooltip="Recargar" (onClick)="load()" />
+  </div>
+
+  <!-- Table (dynamic columns from catalog) -->
+  <p-table
+    [value]="rows()"
+    [loading]="loading()"
+    responsiveLayout="scroll"
+    styleClass="p-datatable-sm obl-table"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th>Empleado</th>
+        <th>Cargo</th>
+        <th class="text-right">Salario base</th>
+        @for (cat of catalog(); track cat.id) {
+          <th class="text-right obl-col" [title]="cat.description ?? ''">
+            {{ cat.name }}
+            <span class="col-payer-badge" [class.employer]="cat.payer === 'EMPLOYER'">
+              {{ cat.payer === 'EMPLOYER' ? 'Patrono' : 'Empleado' }}
+            </span>
+          </th>
+        }
+        <th class="text-right">Costo total / mes</th>
+        <th class="text-center">Acción</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-row>
+      <tr>
+        <td>
+          <a [routerLink]="['/employees', row.id]" class="emp-link">
+            <span class="emp-name">{{ row.first_name }} {{ row.last_name }}</span>
+            <span class="emp-dept">{{ row.department_name || '—' }}</span>
+          </a>
+        </td>
+        <td>{{ row.position }}</td>
+        <td class="text-right">{{ row.base_salary | currency:'USD':'symbol':'1.2-2' }}</td>
+        @for (cat of catalog(); track cat.id) {
+          <td class="text-right">
+            @if (getCellValue(row, cat); as val) {
+              <span class="obl-val-badge" [class.employer]="cat.payer === 'EMPLOYER'">
+                {{ val | currency:'USD':'symbol':'1.2-2' }}
+              </span>
+            } @else if (cat.code === 'FONDO_RESERVA') {
+              @if (getObl(row, cat)?.is_active) {
+                <span class="fr-badge active"><i class="pi pi-check-circle"></i> Activo</span>
+              } @else {
+                <span class="text-muted">—</span>
+              }
+            } @else {
+              <span class="text-muted">—</span>
+            }
+          </td>
+        }
+        <td class="text-right font-bold iess-total">
+          {{ row.total_iess_monthly | currency:'USD':'symbol':'1.2-2' }}
+        </td>
+        <td class="text-center">
+          <p-button
+            icon="pi pi-pencil"
+            [text]="true"
+            severity="secondary"
+            pTooltip="Editar obligaciones"
+            (onClick)="openEdit(row)"
+          />
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr><td [attr.colspan]="4 + catalog().length + 2" class="text-center p-4">No hay empleados.</td></tr>
+    </ng-template>
+  </p-table>
+</section>
+
+<!-- Edit Dialog -->
+<p-dialog
+  [visible]="dialogVisible()"
+  (visibleChange)="dialogVisible.set($event)"
+  [modal]="true"
+  [closable]="true"
+  [draggable]="false"
+  styleClass="obl-dialog"
+  [style]="{ width: '540px' }"
+>
+  <ng-template pTemplate="header">
+    <div class="dialog-header">
+      <i class="pi pi-building"></i>
+      <div>
+        <span class="dialog-title">Obligaciones Laborales</span>
+        <span class="dialog-sub">{{ selected()?.first_name }} {{ selected()?.last_name }}</span>
+      </div>
+    </div>
+  </ng-template>
+
+  @if (selected()) {
+    <div class="dialog-body">
+      @for (cat of catalog(); track cat.id) {
+        @if (getFg(cat.id); as fg) {
+          <div class="obl-item" [class.obl-item--active]="fg.value.is_active">
+            <div class="obl-item-header">
+              <div class="obl-item-info">
+                <span class="obl-item-name">{{ cat.name }}</span>
+                @if (cat.is_system) {
+                  <span class="sys-lock" pTooltip="Tasa de sistema — solo lectura"><i class="pi pi-lock"></i></span>
+                }
+                <span class="obl-item-payer" [class.employer]="cat.payer === 'EMPLOYER'">
+                  {{ cat.payer === 'EMPLOYER' ? 'Patrono' : 'Empleado' }}
+                </span>
+              </div>
+              <p-checkbox [formControl]="$any(fg.get('is_active'))" [binary]="true"
+                          [inputId]="'obl-active-' + cat.id" />
+            </div>
+
+            @if (fg.value.is_active) {
+              <div class="obl-item-controls">
+                <!-- PERCENTAGE -->
+                @if (cat.calc_type === 'PERCENTAGE') {
+                  @if (cat.is_system) {
+                    <span class="rate-info">
+                      Tasa: {{ (cat.default_value ?? 0) * 100 | number:'1.2-2' }}%
+                      → <strong>{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}</strong>
+                    </span>
+                  } @else {
+                    <div class="ctrl-row">
+                      <label>Tasa (%)</label>
+                      <p-inputNumber [formControl]="$any(fg.get('override_value'))"
+                                     suffix="%" [minFractionDigits]="2" [min]="0" [max]="100"
+                                     inputStyleClass="w-full" class="w-full"
+                                     [placeholder]="'Defecto: ' + ((cat.default_value ?? 0) * 100 | number:'1.2-2') + '%'" />
+                    </div>
+                    <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}/mes</span>
+                  }
+                  <!-- Payout mode only for FONDO_RESERVA -->
+                  @if (cat.code === 'FONDO_RESERVA') {
+                    <div class="ctrl-row mt-2">
+                      <label>Modalidad de pago</label>
+                      <p-selectButton
+                        [formControl]="$any(fg.get('payout_mode'))"
+                        [options]="payoutModeOptions"
+                        optionLabel="label" optionValue="value"
+                      />
+                    </div>
+                  }
+                }
+                <!-- FIXED -->
+                @if (cat.calc_type === 'FIXED') {
+                  <div class="ctrl-row">
+                    <label>Monto mensual (USD)</label>
+                    <p-inputNumber [formControl]="$any(fg.get('override_value'))"
+                                   mode="currency" currency="USD"
+                                   [minFractionDigits]="2" [min]="0"
+                                   inputStyleClass="w-full" class="w-full" />
+                  </div>
+                  <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}/mes</span>
+                }
+                <!-- Cuándo pagar: para cualquier obligación LUMP_SUM (PERCENTAGE o FIXED) -->
+                @if (cat.payment_mode === 'LUMP_SUM' && payFreqOptionsMap[cat.id]) {
+                  <div class="ctrl-row mt-2">
+                    <label class="text-sm font-semibold">Cuándo pagar</label>
+                    <p-selectButton
+                      [ngModel]="fg.get('prefer_monthly')?.value"
+                      (ngModelChange)="onPreferMonthlyChange(cat.id, $event)"
+                      [options]="payFreqOptionsMap[cat.id]"
+                      optionLabel="label" optionValue="value"
+                    />
+                    @if (fg.get('prefer_monthly')?.value !== 'MONTHLY' && cat.payment_month) {
+                      <small class="text-muted mt-1">
+                        <i class="pi pi-calendar mr-1"></i>
+                        Pago anual el {{ cat.payment_day || '' }}
+                        de {{ monthOptions[+(cat.payment_month) - 1].label }}
+                      </small>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+      }
+
+      <!-- Preview total -->
+      <div class="dialog-preview">
+        <div class="preview-row total">
+          <span>Total IESS / mes estimado</span>
+          <span>{{ previewTotalIess | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </div>
+    </div>
+  }
+
+  <ng-template pTemplate="footer">
+    <p-button label="Cancelar" icon="pi pi-times" severity="secondary" [text]="true"
+              (onClick)="dialogVisible.set(false)" />
+    <p-button label="Guardar cambios" icon="pi pi-check"
+              [loading]="saving()" (onClick)="saveEdit()" />
+  </ng-template>
+</p-dialog>

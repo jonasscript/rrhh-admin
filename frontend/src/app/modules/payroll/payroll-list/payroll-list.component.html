@@ -1,0 +1,84 @@
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Nómina</h1>
+    <p class="page-subtitle">Mes en curso: <strong>{{ currentMonthLabel }}</strong></p>
+  </div>
+
+  <div class="flex flex-column align-items-end gap-2">
+    @if (canCreate()) {
+      <p-button
+        label="Crear período {{ currentMonthLabel }}"
+        icon="pi pi-plus"
+        (onClick)="createPeriod()"
+        [loading]="creating()" />
+    } @else {
+      <p-button
+        label="Crear período {{ currentMonthLabel }}"
+        icon="pi pi-plus"
+        [disabled]="true"
+        [pTooltip]="createBlockReason()!"
+        tooltipPosition="left" />
+    }
+    @if (createBlockReason(); as reason) {
+      <small class="text-color-secondary">{{ reason }}</small>
+    }
+  </div>
+</div>
+
+<!-- Período abierto destacado -->
+@if (openPeriod(); as op) {
+  <div class="open-period-card mb-4"
+       [class.pending]="op.employee_count === 0"
+       [class.ready]="op.employee_count > 0">
+    <div class="open-period-info">
+      <i class="pi pi-clock text-xl mr-2"></i>
+      <div>
+        <div class="font-semibold">Período abierto: {{ monthLabel(op.month) }} {{ op.year }}</div>
+        <div class="text-sm text-color-secondary">
+          @if (op.employee_count === 0) {
+            Sin nómina generada — haz clic en "Ver" para generarla
+          } @else {
+            {{ op.employee_count }} empleados · Total neto:
+            {{ op.total_net | currency:'USD':'symbol':'1.2-2' }}
+          }
+        </div>
+      </div>
+    </div>
+    <a [routerLink]="[op.id]">
+      <p-button label="Ver / Gestionar" icon="pi pi-arrow-right" iconPos="right" severity="warning" />
+    </a>
+  </div>
+}
+
+<p-table [value]="periods()" [loading]="loading()" responsiveLayout="scroll"
+         styleClass="p-datatable-sm" [rowHover]="true">
+  <ng-template pTemplate="header">
+    <tr>
+      <th>Período</th>
+      <th>Empleados</th>
+      <th>Total neto</th>
+      <th>Estado</th>
+      <th style="width:100px">Acción</th>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="body" let-p>
+    <tr>
+      <td class="font-medium">{{ monthLabel(p.month) }} {{ p.year }}</td>
+      <td>{{ p.employee_count }}</td>
+      <td>{{ p.total_net | currency:'USD':'symbol':'1.2-2' }}</td>
+      <td><span class="status-badge {{ p.status }}">{{ p.status }}</span></td>
+      <td>
+        <a [routerLink]="[p.id]">
+          <p-button icon="pi pi-eye" [text]="true" severity="info" pTooltip="Ver detalle" />
+        </a>
+      </td>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="emptymessage">
+    <tr>
+      <td colspan="5" class="text-center py-4 text-color-secondary">
+        No hay períodos de nómina aún.
+      </td>
+    </tr>
+  </ng-template>
+</p-table>

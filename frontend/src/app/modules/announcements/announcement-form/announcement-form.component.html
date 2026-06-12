@@ -1,0 +1,56 @@
+<p-toast />
+
+    <div class="page-header">
+      <h1 class="page-title">Nuevo Comunicado</h1>
+      <a routerLink="/comunicados">
+        <p-button label="Cancelar" icon="pi pi-times" severity="secondary" [text]="true" />
+      </a>
+    </div>
+
+    <p-card>
+      <form [formGroup]="form" (ngSubmit)="submit()">
+        <div class="grid">
+
+          <div class="col-12 field">
+            <label>Título *</label>
+            <input pInputText formControlName="title" class="w-full" />
+          </div>
+
+          <div class="col-12 field">
+            <label>Cuerpo del mensaje *</label>
+            <textarea pInputTextarea formControlName="body" [rows]="6" class="w-full"></textarea>
+          </div>
+
+          <div class="col-12 md:col-4 field">
+            <label>Tipo</label>
+            <p-dropdown formControlName="type"
+                        [options]="[
+                          {label:'Información', value:'INFO'},
+                          {label:'Urgente',     value:'URGENT'},
+                          {label:'Recordatorio', value:'REMINDER'},
+                        ]"
+                        optionLabel="label" optionValue="value" class="w-full" />
+          </div>
+
+          <div class="col-12 md:col-4 field">
+            <label>Programar envío (opcional)</label>
+            <p-calendar formControlName="scheduledAt" [showTime]="true"
+                        dateFormat="yy-mm-dd" [showIcon]="true" class="w-full" />
+          </div>
+
+          <div class="col-12 md:col-2 field flex align-items-end">
+            <p-checkbox formControlName="sendEmail" [binary]="true" label="Enviar por email" />
+          </div>
+
+          <div class="col-12 md:col-2 field flex align-items-end">
+            <p-checkbox formControlName="targetAll" [binary]="true" label="Todos los empleados" />
+          </div>
+
+        </div>
+
+        <div class="flex justify-content-end gap-2 mt-3">
+          <p-button type="submit" label="Guardar comunicado"
+                    icon="pi pi-check" [loading]="saving()" />
+        </div>
+      </form>
+    </p-card>

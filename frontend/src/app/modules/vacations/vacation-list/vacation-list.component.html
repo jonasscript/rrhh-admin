@@ -1,0 +1,47 @@
+<p-toast />
+
+    <div class="page-header">
+      <h1 class="page-title">Vacaciones</h1>
+    </div>
+
+    <!-- Filtro estado -->
+    <div class="mb-3">
+      <p-dropdown [(ngModel)]="filterStatus" (onChange)="load()"
+                  [options]="[
+                    {label:'Todas',    value:''},
+                    {label:'Pendientes', value:'PENDING'},
+                    {label:'Aprobadas', value:'APPROVED'},
+                    {label:'Rechazadas', value:'REJECTED'},
+                  ]"
+                  optionLabel="label" optionValue="value" />
+    </div>
+
+    <p-table [value]="requests()" [loading]="loading()" responsiveLayout="scroll" styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Empleado</th>
+          <th>Desde</th>
+          <th>Hasta</th>
+          <th>Días</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-r>
+        <tr>
+          <td>{{ r.first_name }} {{ r.last_name }}</td>
+          <td>{{ r.start_date | date:'dd/MM/yyyy' }}</td>
+          <td>{{ r.end_date   | date:'dd/MM/yyyy' }}</td>
+          <td>{{ r.days_requested }}</td>
+          <td><span class="status-badge {{ r.status }}">{{ r.status }}</span></td>
+          <td>
+            @if (r.status === 'PENDING') {
+              <p-button icon="pi pi-check" [text]="true" severity="success"
+                        pTooltip="Aprobar" (onClick)="review(r.id, 'APPROVED')" />
+              <p-button icon="pi pi-times" [text]="true" severity="danger"
+                        pTooltip="Rechazar" (onClick)="review(r.id, 'REJECTED')" />
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>

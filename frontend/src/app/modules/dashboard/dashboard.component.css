@@ -1,0 +1,7 @@
+.page-title { color: #1e3a5f; font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
+    .stat-card { border-radius: 12px; }
+    .stat-content { display: flex; align-items: center; justify-content: space-between; }
+    .stat-label { display: block; font-size: .85rem; color: #6b7280; }
+    .stat-value { display: block; font-size: 1.75rem; font-weight: 700; color: #1e3a5f; }
+    .stat-icon { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+    .stat-icon i { font-size: 1.4rem; color: white; }

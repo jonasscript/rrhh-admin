@@ -1,0 +1,74 @@
+<div class="page-header">
+      <h1 class="page-title">Detalle de nómina</h1>
+      <div class="flex gap-2">
+        <p-button label="Generar" icon="pi pi-bolt" severity="warning"
+                  (onClick)="generate()" [loading]="generating()"
+                  [disabled]="period()?.status === 'CLOSED'" />
+        <p-button label="Cerrar período" icon="pi pi-lock" severity="danger"
+                  (onClick)="close()" [disabled]="period()?.status === 'CLOSED'" />
+        <a routerLink="/nomina">
+          <p-button icon="pi pi-arrow-left" label="Volver" [text]="true" />
+        </a>
+      </div>
+    </div>
+
+    @if (period(); as p) {
+      <div class="mb-3">
+        <span class="font-semibold">Período: </span>{{ p.month }}/{{ p.year }} —
+        <span class="status-badge {{ p.status }} ml-2">{{ p.status }}</span>
+      </div>
+    }
+
+    <p-table [value]="details()" [loading]="loading()" responsiveLayout="scroll" styleClass="p-datatable-sm">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Empleado</th>
+          <th>Cédula</th>
+          <th>Salario base</th>
+          <th>Horas ext.</th>
+          <th>Décimos + FR</th>
+          <th class="text-right">A cuenta bancaria</th>
+          <th class="text-right">Planilla IESS</th>
+          <th class="text-right">Costo empresa</th>
+          <th>PDF</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-d>
+        <tr>
+          <td>{{ d.first_name }} {{ d.last_name }}</td>
+          <td>{{ d.cedula }}</td>
+          <td>{{ d.base_salary | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td>{{ d.overtime_pay | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td>{{ (+d.decimo_tercero + +d.decimo_cuarto + +d.fondos_reserva) | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right font-bold text-green-700">{{ d.to_employee | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right text-orange-600">{{ d.to_iess | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right text-blue-700">{{ d.employer_cost | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td>
+            <p-button icon="pi pi-file-pdf" [text]="true" severity="danger"
+                      pTooltip="Descargar PDF" (onClick)="downloadPdf(d.id)" />
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="footer">
+        @if (summary(); as s) {
+          <tr class="payroll-subtotal">
+            <td colspan="5" class="text-right font-semibold">Total a cuentas bancarias:</td>
+            <td class="text-right font-bold text-green-700">{{ s.total_to_employees | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td colspan="3"></td>
+          </tr>
+          <tr class="payroll-subtotal">
+            <td colspan="5" class="text-right font-semibold">Total planilla IESS:</td>
+            <td></td>
+            <td class="text-right font-bold text-orange-600">{{ s.total_to_iess | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td colspan="2"></td>
+          </tr>
+          <tr class="payroll-total">
+            <td colspan="5" class="text-right font-bold">COSTO TOTAL EMPRESA:</td>
+            <td></td>
+            <td></td>
+            <td class="text-right font-bold text-blue-700">{{ s.total_employer_cost | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td></td>
+          </tr>
+        }
+      </ng-template>
+    </p-table>

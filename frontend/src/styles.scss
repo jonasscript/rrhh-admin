@@ -1,0 +1,65 @@
+/* PrimeNG + PrimeFlex global styles */
+@import "primeng/resources/themes/lara-light-blue/theme.css";
+@import "primeng/resources/primeng.css";
+@import "primeicons/primeicons.css";
+@import "primeflex/primeflex.css";
+
+/* Reset básico */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #f1f5f9; }
+::-webkit-scrollbar-thumb  { background: #94a3b8; border-radius: 3px; }
+
+/* Utilidades */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.card-stat {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: .25rem .75rem;
+  border-radius: 9999px;
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.status-badge.ACTIVE,
+.status-badge.APPROVED,
+.status-badge.PAID       { background: #dcfce7; color: #16a34a; }
+.status-badge.PENDING    { background: #fef9c3; color: #ca8a04; }
+.status-badge.PARTIAL    { background: #dbeafe; color: #2563eb; }
+.status-badge.OVERDUE,
+.status-badge.INACTIVE,
+.status-badge.REJECTED   { background: #fee2e2; color: #dc2626; }
+.status-badge.DRAFT,
+.status-badge.SCHEDULED  { background: #f1f5f9; color: #64748b; }
