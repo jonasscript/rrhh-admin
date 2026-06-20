@@ -1,0 +1,75 @@
+.page { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
+.page-title  { margin: 0; font-size: 1.6rem; }
+.page-subtitle { margin: .2rem 0 0; color: var(--text-color-secondary); }
+
+.filters-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--surface-50);
+  border-radius: 8px;
+}
+.filters-bar .field { display: flex; flex-direction: column; min-width: 140px; }
+.filters-bar .field label { font-size: .85rem; font-weight: 500; margin-bottom: .3rem; }
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: .75rem;
+  margin-bottom: 1.5rem;
+}
+@media (max-width: 900px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px) { .summary-grid { grid-template-columns: 1fr; } }
+
+.summ-card { }
+.summ-card--billed      { border-top: 3px solid var(--blue-400); }
+.summ-card--collected   { border-top: 3px solid var(--green-500); }
+.summ-card--expenses    { border-top: 3px solid var(--orange-400); }
+.summ-card--provisions  { border-top: 3px solid var(--yellow-500); }
+.summ-card--positive    { border-top: 3px solid var(--green-500); }
+.summ-card--negative    { border-top: 3px solid var(--red-500); }
+
+.summ-content { display: flex; flex-direction: column; align-items: center; padding: .5rem 0; }
+.summ-label   { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-color-secondary); margin-bottom: .2rem; }
+.summ-value   { font-size: 1.3rem; font-weight: 700; }
+
+/* Table */
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.text-green-600 { color: #16a34a; }
+.text-red-500   { color: #ef4444; }
+
+.detail-row td { background: var(--surface-50) !important; }
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  padding: .75rem 1rem;
+}
+@media (max-width: 700px) { .detail-grid { grid-template-columns: 1fr; } }
+
+.detail-title {
+  font-size: .88rem; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-color-secondary);
+  margin: 0 0 .5rem;
+}
+.detail-section { }
+.detail-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.detail-table th { text-align: left; padding: .25rem .4rem; border-bottom: 1px solid var(--surface-200); color: var(--text-color-secondary); }
+.detail-table td { padding: .25rem .4rem; border-bottom: 1px solid var(--surface-100); }
+.empty-detail { color: var(--text-color-secondary); font-size: .85rem; margin: .5rem 0 0; }
+
+.section-title { margin: 1rem 0 .75rem; font-size: 1.1rem; }
+
+.fund-balances { margin-top: 1rem; }
+.fund-bal-grid { display: flex; gap: 2rem; flex-wrap: wrap; }
+.fund-bal-item { display: flex; flex-direction: column; }
+.fund-bal-label { font-size: .82rem; color: var(--text-color-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.fund-bal-value { font-size: 1.4rem; font-weight: 700; }
+.fund-bal-item--total .fund-bal-value { color: var(--primary-color); }
+
+.loading-placeholder { padding: 3rem; text-align: center; color: var(--text-color-secondary); }

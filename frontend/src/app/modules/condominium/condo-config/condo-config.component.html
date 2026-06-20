@@ -1,27 +1,91 @@
 <p-toast />
-    <div class="page">
-      <h2 class="page-title">Configuración del Condominio</h2>
-      <p-card styleClass="config-card">
-        <form [formGroup]="form" (ngSubmit)="save()">
-          <div class="field">
-            <label>Nombre del condominio *</label>
-            <input pInputText formControlName="condoName" class="w-full" />
-          </div>
-          <div class="field">
-            <label>Dirección</label>
-            <input pInputText formControlName="address" class="w-full" />
-          </div>
-          <div class="field">
-            <label>Email del administrador *</label>
-            <input pInputText formControlName="adminEmail" type="email" class="w-full" />
-            <small class="text-color-secondary">Este email aparece como remitente en los cobros.</small>
-          </div>
-          <div class="field">
-            <label>Gastos fijos mensuales *</label>
-            <p-inputNumber formControlName="fixedExpenses" [min]="0" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
-            <small class="text-color-secondary">Mantenimiento, servicios, seguro. Se aplica como base en todos los períodos.</small>
-          </div>
-          <button pButton type="submit" label="Guardar configuración" icon="pi pi-save" [loading]="saving" [disabled]="form.invalid" class="mt-2"></button>
-        </form>
-      </p-card>
+<div class="page">
+  <h2 class="page-title">Configuración del Condominio</h2>
+
+  <form [formGroup]="form" (ngSubmit)="save()">
+
+    <!-- Información general -->
+    <p-card header="Información general" styleClass="config-card">
+      <div class="config-grid">
+        <div class="field">
+          <label>Nombre del condominio *</label>
+          <input pInputText formControlName="name" class="w-full" placeholder="Ej: Edificio Las Palmas" />
+        </div>
+        <div class="field">
+          <label>Email del administrador *</label>
+          <input pInputText formControlName="adminEmail" type="email" class="w-full" />
+          <small class="hint">Aparece como remitente en los correos de cobro.</small>
+        </div>
+      </div>
+    </p-card>
+
+    <!-- Gastos fijos de respaldo -->
+    <p-card header="Gastos fijos (valores de respaldo)" styleClass="config-card mt-3">
+      <p class="section-hint">
+        Estos montos se usan únicamente cuando no hay un catálogo de gastos configurado.
+        Se recomienda gestionar los gastos desde <strong>Gastos del Condominio</strong>.
+      </p>
+      <div class="config-grid-4">
+        <div class="field">
+          <label>Mantenimiento</label>
+          <p-inputNumber formControlName="fixedMaintenance" [min]="0" [minFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="field">
+          <label>Seguridad</label>
+          <p-inputNumber formControlName="fixedSecurity" [min]="0" [minFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="field">
+          <label>Limpieza</label>
+          <p-inputNumber formControlName="fixedCleaning" [min]="0" [minFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="field">
+          <label>Otros</label>
+          <p-inputNumber formControlName="fixedOther" [min]="0" [minFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+      </div>
+    </p-card>
+
+    <!-- Mora -->
+    <p-card header="Mora por retraso" styleClass="config-card mt-3">
+      <div class="config-grid-3">
+        <div class="field field-toggle">
+          <label>Cobrar mora</label>
+          <p-toggleButton formControlName="moraEnabled" onLabel="Habilitada" offLabel="Deshabilitada" />
+        </div>
+        <div class="field">
+          <label>Tasa mensual (ej: 0.02 = 2%)</label>
+          <p-inputNumber formControlName="moraRate" [min]="0" [max]="1" [minFractionDigits]="2" [maxFractionDigits]="4" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+        <div class="field">
+          <label>Días de gracia</label>
+          <p-inputNumber formControlName="moraGraceDays" [min]="0" [max]="90" [useGrouping]="false" styleClass="w-full" inputStyleClass="w-full" />
+        </div>
+      </div>
+    </p-card>
+
+    <!-- Provisiones financieras (link a página dedicada) -->
+    <p-card styleClass="config-card mt-3">
+      <ng-template pTemplate="header">
+        <div class="card-header-custom">
+          <span class="card-title">Provisiones financieras</span>
+          <p-tag value="Módulo dedicado" severity="info" />
+        </div>
+      </ng-template>
+      <p class="section-hint">
+        Las provisiones financieras ahora tienen su propia sección en el menú.
+        Desde allí puedes configurar provisiones de tipo porcentaje, monto fijo o variable.
+      </p>
+      <a pButton icon="pi pi-shield" label="Ir a Provisiones Financieras"
+        [outlined]="true" routerLink="/condominium/provisions"></a>
+    </p-card>
+
+    <div class="form-footer">
+      <button pButton type="submit" label="Guardar configuración" icon="pi pi-save"
+        [loading]="saving" [disabled]="form.invalid"></button>
     </div>
+
+  </form>
+</div>
+
+<p-confirmDialog />
+

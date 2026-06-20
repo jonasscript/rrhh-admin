@@ -1,9 +1,15 @@
 require('dotenv').config();
 
+// Validar secreto JWT — no permitir el valor default en producción
+const jwtSecret = process.env.JWT_SECRET || 'change_this_secret';
+if (jwtSecret === 'change_this_secret' && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET debe estar configurado en variables de entorno en producción');
+}
+
 const config = {
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || 'change_this_secret',
+  jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   email: {

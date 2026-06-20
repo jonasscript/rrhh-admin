@@ -10,6 +10,12 @@
 
       <div class="grid">
         <div class="col-12 md:col-4">
+          <p-card header="Gastos del Condominio">
+            <p class="text-color-secondary text-sm">Configura los ítems de gasto fijos y variables que se usan para calcular las alícuotas.</p>
+            <button pButton label="Gestionar gastos" icon="pi pi-wallet" severity="info" class="w-full mt-2" routerLink="expenses"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
           <p-card header="Reporte de Morosidad">
             <p class="text-color-secondary text-sm">Visualiza los co-propietarios con pagos pendientes.</p>
             <button pButton label="Ver morosidad" icon="pi pi-exclamation-triangle" severity="danger" class="w-full mt-2" routerLink="morosidad"></button>
@@ -25,6 +31,24 @@
           <p-card header="Períodos de cobro">
             <p class="text-color-secondary text-sm">Crear y gestionar períodos mensuales de alícuotas.</p>
             <button pButton label="Períodos" icon="pi pi-calendar" class="w-full mt-2 p-button-outlined" routerLink="periods"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
+          <p-card header="Provisiones Financieras">
+            <p class="text-color-secondary text-sm">Configura las provisiones (porcentaje, monto fijo o variable) que se aplican en cada período.</p>
+            <button pButton label="Gestionar provisiones" icon="pi pi-shield" severity="secondary" class="w-full mt-2 p-button-outlined" routerLink="provisions"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
+          <p-card header="Fondos de Reserva">
+            <p class="text-color-secondary text-sm">Libro auxiliar de provisiones financieras: fondo de capital y provisión de incobrables.</p>
+            <button pButton label="Ver fondos" icon="pi pi-building" class="w-full mt-2 p-button-outlined" routerLink="funds"></button>
+          </p-card>
+        </div>
+        <div class="col-12 md:col-4">
+          <p-card header="Libro Financiero">
+            <p class="text-color-secondary text-sm">Libro de ingresos y egresos por período. Exporta balances para presentar a los propietarios.</p>
+            <button pButton label="Ver libro" icon="pi pi-chart-bar" severity="info" class="w-full mt-2" routerLink="reports"></button>
           </p-card>
         </div>
       </div>

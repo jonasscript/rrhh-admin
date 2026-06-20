@@ -34,7 +34,12 @@ const login = async (req, res) => {
     expiresIn: config.jwtExpiresIn,
   });
 
-  success(res, { token, user: { id: user.id, email: user.email, role: user.role } });
+  // refreshToken tiene mayor TTL para permitir renovación silenciosa
+  const refreshToken = jwt.sign({ sub: user.id, type: 'refresh' }, config.jwtSecret, {
+    expiresIn: '30d',
+  });
+
+  success(res, { token, refreshToken, user: { id: user.id, email: user.email, role: user.role } });
 };
 
 // GET /auth/me
@@ -48,6 +53,39 @@ const me = async (req, res) => {
     [req.user.id]
   );
   success(res, rows[0]);
+};
+
+// POST /auth/refresh
+// Valida el refreshToken y emite un nuevo access token + refresh token
+const refresh = async (req, res) => {
+  const { refreshToken } = z.object({
+    refreshToken: z.string(),
+  }).parse(req.body);
+
+  let payload;
+  try {
+    payload = jwt.verify(refreshToken, config.jwtSecret);
+  } catch {
+    throw new AppError('Refresh token inválido o expirado', 401);
+  }
+
+  if (payload.type !== 'refresh') throw new AppError('Token incorrecto', 401);
+
+  const { rows } = await query(
+    'SELECT id, email, role, is_active FROM users WHERE id = $1',
+    [payload.sub]
+  );
+  const user = rows[0];
+  if (!user || !user.is_active) throw new AppError('Usuario inactivo', 401);
+
+  const newToken = jwt.sign({ sub: user.id, role: user.role }, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn,
+  });
+  const newRefreshToken = jwt.sign({ sub: user.id, type: 'refresh' }, config.jwtSecret, {
+    expiresIn: '30d',
+  });
+
+  success(res, { token: newToken, refreshToken: newRefreshToken });
 };
 
 // PATCH /auth/change-password
@@ -64,4 +102,4 @@ const changePassword = async (req, res) => {
   success(res, null, 200, 'Contraseña actualizada');
 };
 
-module.exports = { login, me, changePassword };
+module.exports = { login, me, refresh, changePassword };

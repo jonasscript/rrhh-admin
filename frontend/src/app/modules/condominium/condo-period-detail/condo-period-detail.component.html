@@ -13,7 +13,7 @@
             @if (period.status === 'DRAFT') {
               <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="generate()" [loading]="generating"></button>
             }
-            @if (period.aliquotPayments?.length && period.status !== 'CLOSED') {
+            @if (period.payments?.length && period.status !== 'CLOSED') {
               <button pButton icon="pi pi-send" label="Enviar correos" severity="success" (click)="sendEmails()" [loading]="sending"></button>
             }
             @if (period.status === 'APPROVED') {
@@ -26,39 +26,45 @@
         <div class="summary-grid">
           <div class="summary-card">
             <span class="label">Gastos fijos</span>
-            <span class="value">\${{ period.fixedExpenses | number:'1.2-2' }}</span>
+            <span class="value">\${{ fixedSum | number:'1.2-2' }}</span>
           </div>
           <div class="summary-card">
             <span class="label">Gastos variables</span>
-            <span class="value">\${{ period.variableExpenses | number:'1.2-2' }}</span>
+            <span class="value">\${{ variableSum | number:'1.2-2' }}</span>
           </div>
+          @if ((period.total_provisions || 0) > 0) {
+            <div class="summary-card">
+              <span class="label">Provisiones</span>
+              <span class="value">\${{ period.total_provisions | number:'1.2-2' }}</span>
+            </div>
+          }
           <div class="summary-card total">
-            <span class="label">Total del mes</span>
-            <span class="value">\${{ period.totalExpenses | number:'1.2-2' }}</span>
+            <span class="label">Total del período</span>
+            <span class="value">\${{ ((period.grand_total || 0) > 0 ? period.grand_total : period.total_expenses) | number:'1.2-2' }}</span>
           </div>
-          @if (period.variableNotes) {
+          @if (period.variable_notes) {
             <div class="summary-card notes">
               <span class="label">Notas variables</span>
-              <span class="value-sm">{{ period.variableNotes }}</span>
+              <span class="value-sm">{{ period.variable_notes }}</span>
             </div>
           }
         </div>
 
         <!-- Payments Table -->
-        <p-table [value]="period.aliquotPayments || []" stripedRows responsiveLayout="scroll">
+        <p-table [value]="period.payments || []" stripedRows responsiveLayout="scroll">
           <ng-template pTemplate="header">
             <tr>
               <th>Depto.</th>
               <th>Propietario</th>
               <th>%</th>
               <th>Alícuota</th>
-              <th>Mora</th>
+              <th>Cargo extra</th>
               <th>Total</th>
               <th>Pagado</th>
               <th>F. Pago</th>
               <th>Comprobante</th>
               <th>Estado</th>
-              <th style="width:130px">Acciones</th>
+              <th style="width:120px">Acciones</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-payment>
@@ -68,9 +74,17 @@
               <td>{{ payment.owner?.participationPct }}%</td>
               <td>\${{ payment.aliquotAmount | number:'1.2-2' }}</td>
               <td>
-                @if (payment.moraAtBilling > 0) {
-                  <span class="mora-txt">\${{ payment.moraAtBilling | number:'1.2-2' }}</span>
-                } @else { — }
+                @if (payment.extras.length > 0) {
+                  <span class="extra-charge" (click)="openExtraDialog(payment)" style="cursor:pointer"
+                    [pTooltip]="payment.extras.length + ' cargo(s) extra'"
+                    tooltipPosition="top">
+                    ${{ payment.extrasTotal | number:'1.2-2' }}
+                  </span>
+                } @else {
+                  <button pButton icon="pi pi-plus" [text]="true" [rounded]="true" size="small"
+                    severity="secondary" (click)="openExtraDialog(payment)"
+                    pTooltip="Agregar cargo extra" [disabled]="payment.status === 'PAID'"></button>
+                }
               </td>
               <td><strong>\${{ payment.totalDue | number:'1.2-2' }}</strong></td>
               <td>\${{ payment.amountPaid | number:'1.2-2' }}</td>
@@ -100,7 +114,7 @@
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
-            <tr><td colspan="11" class="text-center p-4 text-color-secondary">
+            <tr><td colspan="12" class="text-center p-4 text-color-secondary">
               No hay alícuotas generadas. Haz clic en "Generar alícuotas" para calcularlas.
             </td></tr>
           </ng-template>
@@ -116,6 +130,13 @@
         <div class="payment-summary">
           <span><strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong> — {{ selectedPayment.owner?.fullName }}</span>
           <span>Total: <strong>\${{ selectedPayment.totalDue | number:'1.2-2' }}</strong></span>
+          @if (selectedPayment.extrasTotal > 0) {
+            <span class="text-sm text-color-secondary">
+              Alícuota \${{ selectedPayment.aliquotAmount | number:'1.2-2' }}
+              + Mora \${{ selectedPayment.moraAtBilling | number:'1.2-2' }}
+              + Extras \${{ selectedPayment.extrasTotal | number:'1.2-2' }}
+            </span>
+          }
           <span>Ya pagado: \${{ selectedPayment.amountPaid | number:'1.2-2' }}</span>
           <span>Pendiente: <strong class="mora-txt">\${{ (selectedPayment.totalDue - selectedPayment.amountPaid) | number:'1.2-2' }}</strong></span>
         </div>
@@ -145,7 +166,78 @@
       }
     </p-dialog>
 
-    <!-- Upload Proof Dialog -->
+    <!-- Extra Charge Dialog -->
+    <p-dialog [(visible)]="showExtraDialog" header="Cargos Adicionales"
+      [modal]="true" [style]="{width:'520px'}" [closable]="true">
+      @if (selectedPayment) {
+        <div class="extra-owner">
+          <span class="pi pi-user mr-1"></span>
+          <strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong>
+          — {{ selectedPayment.owner?.fullName }}
+        </div>
+
+        <!-- Lista de extras existentes -->
+        @if (selectedPayment.extras.length > 0) {
+          <div class="extras-list">
+            @for (extra of selectedPayment.extras; track extra.id) {
+              @if (editingExtra?.id === extra.id) {
+                <!-- Fila en edición -->
+                <div class="extra-edit-row">
+                  <p-inputNumber [(ngModel)]="editExtraAmount" [min]="0.01" [minFractionDigits]="2"
+                    prefix="\$" styleClass="w-7rem" inputStyleClass="text-right" />
+                  <input pInputText [(ngModel)]="editExtraNotes" class="flex-1"
+                    placeholder="Concepto..." />
+                  <button pButton icon="pi pi-check" [text]="true" [rounded]="true" severity="success"
+                    [loading]="savingExtra" (click)="saveEditExtra()" pTooltip="Guardar"></button>
+                  <button pButton icon="pi pi-times" [text]="true" [rounded]="true" severity="secondary"
+                    (click)="cancelEditExtra()" pTooltip="Cancelar"></button>
+                </div>
+              } @else {
+                <!-- Fila de visualización -->
+                <div class="extra-item-row">
+                  <span class="extra-item-amount">\${{ extra.amount | number:'1.2-2' }}</span>
+                  <span class="extra-item-notes flex-1">{{ extra.notes }}</span>
+                  @if (selectedPayment.status !== 'PAID') {
+                    <button pButton icon="pi pi-pencil" [text]="true" [rounded]="true" size="small"
+                      severity="info" (click)="startEditExtra(extra)" pTooltip="Editar"></button>
+                    <button pButton icon="pi pi-trash" [text]="true" [rounded]="true" size="small"
+                      severity="danger" [loading]="deletingExtra === extra.id"
+                      (click)="deleteExtra(extra)" pTooltip="Eliminar"></button>
+                  }
+                </div>
+              }
+            }
+          </div>
+          <div class="extras-subtotal">
+            <span>Subtotal extras:</span>
+            <strong>\${{ selectedPayment.extrasTotal | number:'1.2-2' }}</strong>
+          </div>
+        } @else {
+          <p class="text-color-secondary text-sm mt-2">Sin cargos extras aún.</p>
+        }
+
+        <!-- Formulario nuevo extra (solo si no está PAID) -->
+        @if (selectedPayment.status !== 'PAID') {
+          <div class="extra-add-section">
+            <h4 class="extra-add-title"><i class="pi pi-plus-circle mr-1"></i>Nuevo cargo</h4>
+            <div class="extra-add-row">
+              <p-inputNumber [(ngModel)]="newExtraAmount" [min]="0.01" [minFractionDigits]="2"
+                prefix="\$" placeholder="Monto" inputStyleClass="text-right" />
+              <input pInputText [(ngModel)]="newExtraNotes" class=""
+                placeholder="Concepto (requerido)" />
+              <button pButton icon="pi pi-check" label="Agregar"
+                [loading]="savingExtra"
+                [disabled]="newExtraAmount <= 0 || !newExtraNotes.trim()"
+                (click)="addExtra()"></button>
+            </div>
+          </div>
+        }
+      }
+
+      <ng-template pTemplate="footer">
+        <button pButton label="Cerrar" [outlined]="true" (click)="showExtraDialog=false"></button>
+      </ng-template>
+    </p-dialog>
     <p-dialog [(visible)]="showProofDialog" header="Subir Comprobante de Pago" [modal]="true" [style]="{width: '480px'}">
       @if (selectedPayment) {
         <div class="proof-info">

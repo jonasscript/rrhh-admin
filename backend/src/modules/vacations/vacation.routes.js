@@ -99,6 +99,16 @@ router.patch('/requests/:id/review', authorize('ADMIN', 'HR', 'SUPERVISOR'), asy
   try {
     await client.query('BEGIN');
 
+    // Verificar y bloquear el saldo dentro de la transacción para evitar race conditions
+    const balRes = await client.query(
+      'SELECT available_days FROM vacation_balances WHERE employee_id = $1 FOR UPDATE',
+      [vr.employee_id]
+    );
+    if (!balRes.rows[0]) throw new AppError('Empleado sin saldo de vacaciones', 404);
+    if (status === 'APPROVED' && parseFloat(balRes.rows[0].available_days) < parseFloat(vr.days_requested)) {
+      throw new AppError('Saldo de vacaciones insuficiente al momento de aprobar', 400);
+    }
+
     await client.query(
       `UPDATE vacation_requests SET
          status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3

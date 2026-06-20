@@ -1,64 +1,291 @@
 <p-toast />
-    <div class="page">
-      <div class="page-header">
-        <h2>Períodos de Alícuotas</h2>
-        <button pButton icon="pi pi-plus" label="Nuevo período" (click)="showDialog = true"></button>
-      </div>
+<p-confirmDialog />
 
-      <p-table [value]="periods" [loading]="loading" stripedRows>
-        <ng-template pTemplate="header">
-          <tr>
-            <th>Período</th>
-            <th>Gastos fijos</th>
-            <th>Gastos variables</th>
-            <th>Total</th>
-            <th>Co-propietarios</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </ng-template>
-        <ng-template pTemplate="body" let-p>
-          <tr>
-            <td><strong>{{ monthName(p.month) }} {{ p.year }}</strong></td>
-            <td>\${{ p.fixedExpenses | number:'1.2-2' }}</td>
-            <td>\${{ p.variableExpenses | number:'1.2-2' }}</td>
-            <td><strong>\${{ p.totalExpenses | number:'1.2-2' }}</strong></td>
-            <td>{{ p._count?.aliquotPayments || 0 }}</td>
-            <td><p-tag [value]="p.status" [severity]="severity(p.status)" /></td>
-            <td>
-              <button pButton icon="pi pi-eye" [rounded]="true" [text]="true" [routerLink]="['/condominium/periods', p.id]" pTooltip="Ver detalle"></button>
-            </td>
-          </tr>
-        </ng-template>
-        <ng-template pTemplate="emptymessage">
-          <tr><td colspan="7" class="text-center p-4">No hay períodos creados</td></tr>
-        </ng-template>
-      </p-table>
+<div class="page">
+  <div class="page-header">
+    <h2>Períodos de Alícuotas</h2>
+    <button pButton icon="pi pi-plus" label="Nuevo período" (click)="openNewPeriod()"></button>
+  </div>
+
+  <p-table [value]="periods" [loading]="loading" stripedRows styleClass="p-datatable-sm p-datatable-gridlines">
+    <ng-template pTemplate="header">
+      <tr>
+        <th pSortableColumn="year">Período <p-sortIcon field="year" /></th>
+        <th>Gastos op.</th>
+        <th>Provisiones</th>
+        <th>Total general</th>
+        <th>Pagos</th>
+        <th>Estado</th>
+        <th style="width:110px">Acciones</th>
+      </tr>
+    </ng-template>
+    <ng-template pTemplate="body" let-p>
+      <tr>
+        <td><strong>{{ monthName(p.month) }} {{ p.year }}</strong></td>
+        <td>{{ p.total_expenses | currency:'USD':'symbol':'1.2-2' }}</td>
+        <td class="text-color-secondary">{{ p.total_provisions | currency:'USD':'symbol':'1.2-2' }}</td>
+        <td><strong>{{ effectiveTotal(p) | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+        <td class="text-center">
+          <span class="payments-pill">{{ p.paid_count || 0 }} / {{ p.total_payments || 0 }}</span>
+        </td>
+        <td><p-tag [value]="p.status" [severity]="severity(p.status)" /></td>
+        <td class="text-center">
+          <button pButton icon="pi pi-eye" [rounded]="true" [text]="true"
+            [routerLink]="['/condominium/periods', p.id]" pTooltip="Ver detalle"></button>
+          @if (p.status !== 'CLOSED') {
+            <button pButton icon="pi pi-trash" [rounded]="true" [text]="true" severity="danger"
+              (click)="confirmDelete(p)" pTooltip="Eliminar período" [disabled]="deleting"></button>
+          }
+        </td>
+      </tr>
+    </ng-template>
+    <ng-template pTemplate="emptymessage">
+      <tr><td colspan="7" class="text-center p-4 text-color-secondary">No hay períodos creados aún</td></tr>
+    </ng-template>
+  </p-table>
+</div>
+
+<!-- ── Dialog: Nuevo período ─────────────────────────────── -->
+<p-dialog
+  [(visible)]="showDialog"
+  header="Nuevo Período de Alícuotas"
+  [modal]="true"
+  [style]="{ width: '660px', maxWidth: '96vw' }"
+  [draggable]="false"
+>
+  <div class="period-form">
+
+    <!-- Mes / Año -->
+    <div class="date-row">
+      <div class="field">
+        <label>Mes</label>
+        <p-dropdown
+          [options]="monthOptions" [(ngModel)]="selectedMonth"
+          optionLabel="label" optionValue="value"
+          styleClass="w-full"
+        />
+      </div>
+      <div class="field">
+        <label>Año</label>
+        <p-inputNumber
+          [(ngModel)]="selectedYear" [min]="2020" [max]="2050"
+          [useGrouping]="false" styleClass="w-full" inputStyleClass="w-full"
+        />
+      </div>
     </div>
 
-    <p-dialog [(visible)]="showDialog" header="Nuevo Período" [modal]="true" [style]="{width:'440px'}">
-      <form [formGroup]="form" (ngSubmit)="create()">
-        <div class="grid">
-          <div class="col-6 field">
-            <label>Mes *</label>
-            <p-inputNumber formControlName="month" [min]="1" [max]="12" class="w-full" inputStyleClass="w-full" />
+    <p-divider />
+
+    <!-- Gastos del período (catálogo) -->
+    <div class="expense-section">
+      <div class="section-header">
+        <div>
+          <h4 class="section-title">Gastos del período</h4>
+          <p class="section-sub">Los recurrentes están pre-seleccionados. Activa los adicionales según el mes.</p>
+        </div>
+        @if (lineItems.length === 0 && !loadingItems) {
+          <button pButton label="Configurar gastos" icon="pi pi-external-link"
+            class="p-button-text p-button-sm" (click)="goToExpenses()"></button>
+        }
+      </div>
+
+      @if (loadingItems) {
+        <div class="skeleton-list">
+          @for (n of [1,2,3]; track n) {
+            <div class="skeleton-row">
+              <p-skeleton shape="circle" size="1.25rem" />
+              <p-skeleton width="55%" height="1rem" />
+              <p-skeleton width="5rem" height="1.5rem" borderRadius="20px" />
+              <p-skeleton width="7rem" height="2rem" />
+            </div>
+          }
+        </div>
+      } @else if (lineItems.length === 0) {
+        <div class="empty-catalog">
+          <i class="pi pi-info-circle text-blue-400"></i>
+          <span>Sin ítems configurados. Agrega gastos adicionales abajo o
+            <a class="link" (click)="goToExpenses()">configura el catálogo</a>.
+          </span>
+        </div>
+      } @else {
+        <div class="items-list">
+          @for (item of lineItems; track item.expenseItemId) {
+            <div class="item-row" [class.item-row--off]="!item.selected">
+              <p-checkbox [(ngModel)]="item.selected" [binary]="true" />
+
+              <div class="item-info">
+                <span class="item-name">{{ item.name }}</span>
+                <div class="item-badges">
+                  <p-tag
+                    [value]="item.expenseType === 'FIXED' ? 'Fijo' : 'Variable'"
+                    [severity]="item.expenseType === 'FIXED' ? 'info' : 'warning'"
+                  />
+                  @if (item.isRecurring) {
+                    <span class="badge-recurring"><i class="pi pi-sync"></i> Recurrente</span>
+                  }
+                </div>
+              </div>
+
+              <!-- Fijo: monto de solo lectura | Variable: monto editable -->
+              @if (item.expenseType === 'FIXED') {
+                <span class="amount-fixed" [class.amount-dim]="!item.selected">
+                  {{ item.amount | currency:'USD':'symbol':'1.2-2' }}
+                </span>
+              } @else {
+                <p-inputNumber
+                  [(ngModel)]="item.amount"
+                  [min]="0" [minFractionDigits]="2" [maxFractionDigits]="2"
+                  prefix="$" [disabled]="!item.selected"
+                  styleClass="amount-input" inputStyleClass="text-right"
+                />
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <p-divider />
+
+    <!-- Gastos adicionales ad-hoc -->
+    <div class="expense-section">
+      <div class="section-header">
+        <div>
+          <h4 class="section-title">Gastos adicionales del mes</h4>
+          <p class="section-sub">Gastos únicos o no configurados en el catálogo.</p>
+        </div>
+        <button pButton icon="pi pi-plus" label="Agregar"
+          class="p-button-outlined p-button-sm" (click)="addAdHoc()"></button>
+      </div>
+
+      @for (item of adHocItems; track item; let i = $index) {
+        <div class="adhoc-row">
+          <input pInputText [(ngModel)]="item.name" placeholder="Descripción del gasto" class="adhoc-name" />
+          <p-selectButton
+            [(ngModel)]="item.expenseType"
+            [options]="typeOptions" optionLabel="label" optionValue="value"
+            styleClass="adhoc-type"
+          />
+          <p-inputNumber
+            [(ngModel)]="item.amount"
+            [min]="0" [minFractionDigits]="2" prefix="$"
+            styleClass="amount-input" inputStyleClass="text-right"
+          />
+          <button pButton icon="pi pi-times" [text]="true" [rounded]="true"
+            severity="danger" class="p-button-sm" (click)="removeAdHoc(i)"></button>
+        </div>
+      }
+
+      @if (adHocItems.length === 0) {
+        <p class="text-color-secondary text-sm">Ej: reparación bomba, limpieza especial, etc.</p>
+      }
+    </div>
+
+    <p-divider />
+
+    <!-- Provisiones financieras -->
+    <div class="expense-section">
+      <div class="section-header">
+        <div>
+          <h4 class="section-title">Provisiones financieras</h4>
+          <p class="section-sub">Selecciona las provisiones a aplicar en este período.</p>
+        </div>
+      </div>
+
+      @if (loadingItems) {
+        <div class="skeleton-list">
+          @for (n of [1,2]; track n) {
+            <div class="skeleton-row">
+              <p-skeleton shape="circle" size="1.25rem" />
+              <p-skeleton width="55%" height="1rem" />
+              <p-skeleton width="7rem" height="1rem" />
+            </div>
+          }
+        </div>
+      } @else if (provisionItems.length === 0) {
+        <p class="text-color-secondary text-sm">Sin provisiones configuradas.
+          Agrégalas desde <a class="link" [routerLink]="['/condominium/config']">Configuración</a>.
+        </p>
+      } @else {
+        <div class="items-list">
+          @for (p of provisionItems; track p.id) {
+            <div class="item-row" [class.item-row--off]="!p.selected">
+              <p-checkbox [(ngModel)]="p.selected" [binary]="true" />
+              <div class="item-info">
+                <span class="item-name">{{ p.name }}</span>
+                <div class="item-badges">
+                  @if (p.calc_type === 'PERCENTAGE') {
+                    <p-tag [value]="p.value + '%'" severity="info" />
+                  } @else if (p.calc_type === 'FIXED') {
+                    <p-tag [value]="'$' + (p.value | number:'1.2-2')" severity="warning" />
+                  } @else {
+                    <p-tag value="Variable" severity="secondary" />
+                  }
+                  @if (!p.is_active) {
+                    <span class="badge-recurring text-color-secondary">Inactiva</span>
+                  }
+                </div>
+              </div>
+
+              @if (p.calc_type === 'VARIABLE') {
+                <!-- VARIABLE: el usuario ingresa el monto en este período -->
+                <p-inputNumber
+                  [(ngModel)]="p.customValue"
+                  [min]="0" [minFractionDigits]="2" [maxFractionDigits]="2"
+                  prefix="$" [disabled]="!p.selected"
+                  styleClass="amount-input" inputStyleClass="text-right"
+                />
+              } @else {
+                <span class="amount-fixed" [class.amount-dim]="!p.selected">
+                  @if (p.calc_type === 'PERCENTAGE') {
+                    {{ (grandTotal * p.value / 100) | currency:'USD':'symbol':'1.2-2' }}
+                  } @else {
+                    {{ p.value | currency:'USD':'symbol':'1.2-2' }}
+                  }
+                </span>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Resumen -->
+    <div class="period-summary">
+      <div class="summary-row">
+        <span><i class="pi pi-lock mr-1"></i>Gastos fijos</span>
+        <span>{{ fixedTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+      </div>
+      <div class="summary-row">
+        <span><i class="pi pi-sliders-h mr-1"></i>Gastos variables</span>
+        <span>{{ variableTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+      </div>
+      @if (totalProvisions > 0) {
+        <p-divider styleClass="my-1" />
+        @for (prov of provisionBreakdown; track prov.name) {
+          <div class="summary-row summary-provision">
+            <span><i class="pi pi-shield mr-1"></i>{{ prov.name }}</span>
+            <span>{{ prov.amount | currency:'USD':'symbol':'1.2-2' }}</span>
           </div>
-          <div class="col-6 field">
-            <label>Año *</label>
-            <p-inputNumber formControlName="year" [min]="2020" class="w-full" inputStyleClass="w-full" />
-          </div>
+        }
+        <div class="summary-row">
+          <span>Subtotal provisiones</span>
+          <span>{{ totalProvisions | currency:'USD':'symbol':'1.2-2' }}</span>
         </div>
-        <div class="field">
-          <label>Gastos variables del mes</label>
-          <p-inputNumber formControlName="variableExpenses" [min]="0" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
-        </div>
-        <div class="field">
-          <label>Descripción gastos variables</label>
-          <textarea pInputTextarea formControlName="variableNotes" class="w-full" rows="3" placeholder="Ej: Reparación bomba de agua, limpieza extra..."></textarea>
-        </div>
-        <div class="dialog-footer">
-          <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showDialog = false"></button>
-          <button pButton type="submit" label="Crear período" [loading]="saving" [disabled]="form.invalid"></button>
-        </div>
-      </form>
-    </p-dialog>
+      }
+      <div class="summary-row summary-total">
+        <strong>Total general del período</strong>
+        <strong>{{ grandTotalWithProvisions | currency:'USD':'symbol':'1.2-2' }}</strong>
+      </div>
+    </div>
+
+  </div>
+
+  <ng-template pTemplate="footer">
+    <button pButton label="Cancelar" icon="pi pi-times" class="p-button-text p-button-secondary"
+      (click)="showDialog = false"></button>
+    <button pButton label="Crear período" icon="pi pi-check"
+      [loading]="saving" [disabled]="grandTotal === 0" (click)="create()"></button>
+  </ng-template>
+</p-dialog>
+

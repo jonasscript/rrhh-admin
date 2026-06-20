@@ -5,8 +5,12 @@ const { query }   = require('../../config/db');
 const AppError    = require('../../utils/AppError');
 const { success, paginated } = require('../../utils/response');
 const { newId }   = require('../../utils/id');
+const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 const router = Router();
+
+// Todas las rutas de usuarios requieren autenticación y rol ADMIN o HR
+router.use(authenticate);
 
 // ── Schemas ───────────────────────────────────────────────────
 const createSchema = z.object({
@@ -89,7 +93,7 @@ router.get('/:id', async (req, res) => {
 
 // ── POST /users ───────────────────────────────────────────────
 // Registrar un nuevo usuario del sistema
-router.post('/', async (req, res) => {
+router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
   const { email, password, role } = createSchema.parse(req.body);
 
   // Verificar duplicado
@@ -111,7 +115,7 @@ router.post('/', async (req, res) => {
 
 // ── PUT /users/:id ────────────────────────────────────────────
 // Actualizar rol y/o estado activo de un usuario
-router.put('/:id', async (req, res) => {
+router.put('/:id', authorize('ADMIN', 'HR'), async (req, res) => {
   const data = updateSchema.parse(req.body);
 
   const existing = await query('SELECT id FROM users WHERE id = $1', [req.params.id]);
@@ -137,7 +141,7 @@ router.put('/:id', async (req, res) => {
 
 // ── DELETE /users/:id ─────────────────────────────────────────
 // Desactivar usuario (soft delete — no borra el registro)
-router.delete('/:id', async (req, res) => {  const { rows } = await query(
+router.delete('/:id', authorize('ADMIN'), async (req, res) => {  const { rows } = await query(
     `UPDATE users SET is_active = false
      WHERE id = $1
      RETURNING id, email, is_active`,
@@ -149,7 +153,7 @@ router.delete('/:id', async (req, res) => {  const { rows } = await query(
 
 // ── POST /users/:id/reset-password ────────────────────────────
 // El admin restablece la contraseña de otro usuario
-router.post('/:id/reset-password', async (req, res) => {
+router.post('/:id/reset-password', authorize('ADMIN', 'HR'), async (req, res) => {
   const { newPassword } = resetPasswordSchema.parse(req.body);
 
   const existing = await query('SELECT id FROM users WHERE id = $1', [req.params.id]);

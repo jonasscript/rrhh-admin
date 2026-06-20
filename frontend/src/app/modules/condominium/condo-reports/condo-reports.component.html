@@ -1,0 +1,198 @@
+<p-toast />
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Libro de Ingresos y Egresos</h2>
+      <p class="page-subtitle">Balance financiero por período para presentación a propietarios</p>
+    </div>
+    <button pButton icon="pi pi-file-pdf" label="Exportar PDF"
+      severity="danger" [outlined]="true"
+      [loading]="downloadingPdf" (click)="downloadPdf()"></button>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="field">
+      <label>Año</label>
+      <p-dropdown [(ngModel)]="filterYear" [options]="yearOptions"
+        optionLabel="label" optionValue="value" styleClass="w-full" />
+    </div>
+    <div class="field">
+      <label>Desde (mes)</label>
+      <p-dropdown [(ngModel)]="filterMonthFrom" [options]="monthOptions"
+        optionLabel="label" optionValue="value" [showClear]="true"
+        placeholder="Todo el año" styleClass="w-full" />
+    </div>
+    <div class="field">
+      <label>Hasta (mes)</label>
+      <p-dropdown [(ngModel)]="filterMonthTo" [options]="monthOptions"
+        optionLabel="label" optionValue="value" [showClear]="true"
+        placeholder="Todo el año" styleClass="w-full" />
+    </div>
+    <button pButton icon="pi pi-search" label="Consultar"
+      (click)="loadReport()" [loading]="loading"></button>
+  </div>
+
+  @if (!loading && report) {
+
+    <!-- Summary cards -->
+    <div class="summary-grid">
+      <p-card styleClass="summ-card summ-card--billed">
+        <div class="summ-content">
+          <span class="summ-label">Facturado</span>
+          <span class="summ-value">{{ report.summary.total_billed | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card summ-card--collected">
+        <div class="summ-content">
+          <span class="summ-label">Cobrado</span>
+          <span class="summ-value">{{ report.summary.total_collected | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card summ-card--expenses">
+        <div class="summ-content">
+          <span class="summ-label">Gastos Operativos</span>
+          <span class="summ-value">{{ report.summary.total_expenses | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card summ-card--provisions">
+        <div class="summ-content">
+          <span class="summ-label">Provisiones</span>
+          <span class="summ-value">{{ report.summary.total_provisions | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card" [ngClass]="report.summary.net_result >= 0 ? 'summ-card--positive' : 'summ-card--negative'">
+        <div class="summ-content">
+          <span class="summ-label">Balance Neto</span>
+          <span class="summ-value">{{ sign(report.summary.net_result) }}{{ report.summary.net_result | currency:'USD':'symbol':'1.2-2' }}</span>
+        </div>
+      </p-card>
+    </div>
+
+    <!-- Main ledger table -->
+    <p-table [value]="report.rows" [loading]="loading" styleClass="p-datatable-sm" dataKey="period.id">
+      <ng-template pTemplate="header">
+        <tr>
+          <th style="width:42px"></th>
+          <th>Período</th>
+          <th class="text-right">Facturado</th>
+          <th class="text-right">Cobrado</th>
+          <th class="text-center" style="width:70px">%</th>
+          <th class="text-right">Gastos Op.</th>
+          <th class="text-right">Provisiones</th>
+          <th class="text-right">Total Egresos</th>
+          <th class="text-right">Resultado</th>
+          <th class="text-right">Acumulado</th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-row>
+        <tr>
+          <td>
+            <button pButton icon="pi pi-chevron-right" [text]="true" [rounded]="true"
+              [ngClass]="isExpanded(row) ? 'pi-chevron-down' : 'pi-chevron-right'"
+              (click)="toggleRow(row)"></button>
+          </td>
+          <td><strong>{{ monthLabel(row.period.month) }} {{ row.period.year }}</strong></td>
+          <td class="text-right">{{ row.ingresos.total_billed | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right text-green-600">{{ row.ingresos.total_collected | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-center">
+            <p-tag [value]="pctCollected(row) + '%'"
+              [severity]="pctCollected(row) >= 90 ? 'success' : pctCollected(row) >= 60 ? 'warning' : 'danger'" />
+          </td>
+          <td class="text-right">{{ row.egresos.total_expenses | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right text-color-secondary">{{ row.egresos.total_provisions | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right">{{ row.egresos.grand_total | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right" [ngClass]="row.balance >= 0 ? 'text-green-600' : 'text-red-500'">
+            <strong>{{ sign(row.balance) }}{{ row.balance | currency:'USD':'symbol':'1.2-2' }}</strong>
+          </td>
+          <td class="text-right" [ngClass]="row.cumulative >= 0 ? '' : 'text-red-500'">
+            {{ sign(row.cumulative) }}{{ row.cumulative | currency:'USD':'symbol':'1.2-2' }}
+          </td>
+        </tr>
+
+        <!-- Expanded detail row -->
+        @if (isExpanded(row)) {
+          <tr class="detail-row">
+            <td colspan="10">
+              <div class="detail-grid">
+
+                <!-- Expense items -->
+                <div class="detail-section">
+                  <h4 class="detail-title">Detalle de gastos</h4>
+                  @if (row.egresos.items?.length) {
+                    <table class="detail-table">
+                      <thead><tr><th>Concepto</th><th>Categoría</th><th class="text-right">Monto</th></tr></thead>
+                      <tbody>
+                        @for (item of row.egresos.items; track item.name) {
+                          <tr>
+                            <td>{{ item.name }}</td>
+                            <td><small class="text-color-secondary">{{ item.category }}</small></td>
+                            <td class="text-right">{{ item.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  } @else {
+                    <p class="empty-detail">Sin ítems de gasto registrados</p>
+                  }
+                </div>
+
+                <!-- Fund entries -->
+                <div class="detail-section">
+                  <h4 class="detail-title">Movimientos de fondos del período</h4>
+                  @if (row.fund_moves?.length) {
+                    <table class="detail-table">
+                      <thead><tr><th>Fondo</th><th>Tipo</th><th class="text-right">Monto</th></tr></thead>
+                      <tbody>
+                        @for (fe of row.fund_moves; track fe.id) {
+                          <tr>
+                            <td>{{ fe.fund_type === 'CAPITAL_RESERVE' ? 'Capital' : 'Incobrables' }}</td>
+                            <td><small class="text-color-secondary">{{ fe.entry_type }}</small></td>
+                            <td class="text-right">{{ fe.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  } @else {
+                    <p class="empty-detail">Sin movimientos de fondos</p>
+                  }
+                </div>
+
+              </div>
+            </td>
+          </tr>
+        }
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr><td colspan="10" class="text-center p-4 text-color-secondary">No hay períodos para los filtros seleccionados</td></tr>
+      </ng-template>
+    </p-table>
+
+    <!-- Fund balances -->
+    @if (report.funds) {
+      <p-divider />
+      <div class="fund-balances">
+        <h3 class="section-title">Estado de Fondos</h3>
+        <div class="fund-bal-grid">
+          @for (entry of fundsEntries(report.funds); track entry.id) {
+            <div class="fund-bal-item">
+              <span class="fund-bal-label">{{ entry.name }}</span>
+              <span class="fund-bal-value">{{ entry.balance | currency:'USD':'symbol':'1.2-2' }}</span>
+            </div>
+          }
+          <div class="fund-bal-item fund-bal-item--total">
+            <span class="fund-bal-label">Total fondos</span>
+            <span class="fund-bal-value">{{ totalFundsBalance(report.funds) | currency:'USD':'symbol':'1.2-2' }}</span>
+          </div>
+        </div>
+      </div>
+    }
+
+  } @else if (loading) {
+    <div class="loading-placeholder">Cargando reporte...</div>
+  }
+
+</div>

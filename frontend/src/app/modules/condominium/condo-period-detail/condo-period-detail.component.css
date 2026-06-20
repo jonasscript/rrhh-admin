@@ -10,7 +10,19 @@
     .label { display: block; font-size: .8rem; color: #6b7280; margin-bottom: 4px; }
     .value { font-size: 1.3rem; font-weight: 700; color: #1e3a5f; }
     .value-sm { font-size: .9rem; color: #374151; }
-    .mora-txt { color: #b91c1c; font-weight: 600; }
+    .mora-txt    { color: #b91c1c; font-weight: 600; }
+    .extra-charge { color: #d97706; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
+    .extra-owner  { display: flex; align-items: center; gap: .4rem; font-size: .95rem; margin-bottom: .5rem; }
+    /* Multi-extra dialog */
+    .extras-list { display: flex; flex-direction: column; gap: .4rem; margin: .75rem 0; }
+    .extra-item-row { display: flex; align-items: center; gap: .5rem; padding: .45rem .6rem; background: #f8fafc; border-radius: 7px; font-size: .9rem; }
+    .extra-item-amount { font-weight: 700; color: #d97706; white-space: nowrap; min-width: 5rem; }
+    .extra-item-notes { color: #374151; }
+    .extra-edit-row { display: flex; align-items: center; gap: .5rem; padding: .35rem .6rem; background: #eff6ff; border-radius: 7px; border: 1px solid #bfdbfe; }
+    .extras-subtotal { display: flex; justify-content: flex-end; align-items: center; gap: .5rem; font-size: .9rem; padding-top: .4rem; border-top: 1px solid #e5e7eb; }
+    .extra-add-section { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid #e5e7eb; }
+    .extra-add-title { font-size: .9rem; font-weight: 600; margin: 0 0 .5rem 0; color: #374151; }
+    .extra-add-row { display: flex; align-items: center; gap: .5rem; flex-direction: column; }
     .proof-link { color: #3b82f6; text-decoration: none; font-size: .85rem; display: inline-flex; align-items: center; gap: 4px; }
     .proof-link:hover { text-decoration: underline; }
     .field { margin-bottom: 1rem; } label { display: block; font-weight: 500; margin-bottom: .4rem; font-size: .9rem; }

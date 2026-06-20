@@ -27,20 +27,24 @@ const sendAnnouncementEmail = async (ann, recipients) => {
   const badge = ann.type === 'URGENT' ? '🔴 URGENTE' : ann.type === 'REMINDER' ? '🔔 Recordatorio' : 'ℹ️ Información';
 
   for (const r of recipients) {
-    await transporter.sendMail({
-      from:    `"RRHH Admin" <${config.email.from}>`,
-      to:      r.email,
-      subject: `[${badge}] ${ann.title}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
-          <h2 style="color:#1e40af">${ann.title}</h2>
-          <p>Estimado/a <strong>${r.first_name} ${r.last_name}</strong>,</p>
-          <div style="background:#f1f5f9;padding:16px;border-radius:8px;white-space:pre-wrap">${ann.body}</div>
-          <hr style="margin-top:24px">
-          <p style="font-size:12px;color:#64748b">Este mensaje fue generado automáticamente. No responda a este correo.</p>
-        </div>
-      `,
-    });
+    try {
+      await transporter.sendMail({
+        from:    `"RRHH Admin" <${config.email.from}>`,
+        to:      r.email,
+        subject: `[${badge}] ${ann.title}`,
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">
+            <h2 style="color:#1e40af">${ann.title}</h2>
+            <p>Estimado/a <strong>${r.first_name} ${r.last_name}</strong>,</p>
+            <div style="background:#f1f5f9;padding:16px;border-radius:8px;white-space:pre-wrap">${ann.body}</div>
+            <hr style="margin-top:24px">
+            <p style="font-size:12px;color:#64748b">Este mensaje fue generado automáticamente. No responda a este correo.</p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      console.error(`[email] Error al enviar comunicado a ${r.email}:`, err.message);
+    }
   }
 };
 

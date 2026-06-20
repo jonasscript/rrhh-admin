@@ -1,7 +1,7 @@
 -- ============================================================
 -- RRHH Admin + Condominio — PostgreSQL Schema v5
 -- Idempotente: seguro para bases existentes o nuevas.
--- Compatible con PostgreSQL 13+
+-- Compatible con PostgreSQL 10+
 -- Los UUIDs son generados por el backend (VARCHAR 36)
 -- Ejecutar: node src/db/migrate.js
 --   o bien: psql -U <user> -d <database> -f schema.sql
@@ -12,43 +12,45 @@
 -- ============================================================
 
 DO $$ BEGIN CREATE TYPE user_role AS ENUM ('ADMIN','HR','SUPERVISOR','EMPLEADO');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE contract_type AS ENUM ('INDEFINIDO','PLAZO_FIJO','OBRA_CIERTA');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE employee_status AS ENUM ('ACTIVE','VACATION','INACTIVE');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE period_status AS ENUM ('DRAFT','APPROVED','CLOSED');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE request_status AS ENUM ('PENDING','APPROVED','REJECTED');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE announcement_type AS ENUM ('INFO','URGENT','REMINDER');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE announcement_status AS ENUM ('DRAFT','SCHEDULED','SENT');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE loan_status AS ENUM ('ACTIVE','PAID','CANCELLED');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN CREATE TYPE payment_status AS ENUM ('PENDING','PARTIAL','PAID','OVERDUE');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- FUNCIÓN TRIGGER updated_at
 -- ============================================================
 
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+DO $func_guard$ BEGIN
+  CREATE FUNCTION set_updated_at()
+  RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+EXCEPTION WHEN duplicate_function THEN NULL; END $func_guard$;
 
 -- ============================================================
 -- USUARIOS
@@ -66,8 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 DO $$ BEGIN
   CREATE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- DEPARTAMENTOS
@@ -117,14 +119,16 @@ CREATE TABLE IF NOT EXISTS employees (
   updated_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
-CREATE INDEX IF NOT EXISTS idx_employees_status     ON employees(status);
-CREATE INDEX IF NOT EXISTS idx_employees_cedula     ON employees(cedula);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department_id);
+  CREATE INDEX IF NOT EXISTS idx_employees_status     ON employees(status);
+  CREATE INDEX IF NOT EXISTS idx_employees_cedula     ON employees(cedula);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_employees_updated_at
-    BEFORE UPDATE ON employees FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON employees FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- CATÁLOGO DE OBLIGACIONES LABORALES
@@ -152,8 +156,8 @@ CREATE TABLE IF NOT EXISTS obligation_catalog (
 
 DO $$ BEGIN
   CREATE TRIGGER trg_obligation_catalog_updated_at
-    BEFORE UPDATE ON obligation_catalog FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON obligation_catalog FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- OBLIGACIONES POR EMPLEADO
@@ -174,13 +178,15 @@ CREATE TABLE IF NOT EXISTS employee_obligations (
   UNIQUE (employee_id, obligation_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_employee_obligations_employee ON employee_obligations(employee_id);
-CREATE INDEX IF NOT EXISTS idx_employee_obligations_catalog  ON employee_obligations(obligation_id);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_employee_obligations_employee ON employee_obligations(employee_id);
+  CREATE INDEX IF NOT EXISTS idx_employee_obligations_catalog  ON employee_obligations(obligation_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_employee_obligations_updated_at
-    BEFORE UPDATE ON employee_obligations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON employee_obligations FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- PERÍODOS DE NÓMINA
@@ -199,8 +205,8 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
 
 DO $$ BEGIN
   CREATE TRIGGER trg_payroll_periods_updated_at
-    BEFORE UPDATE ON payroll_periods FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON payroll_periods FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- DETALLE DE NÓMINA POR EMPLEADO
@@ -239,13 +245,15 @@ CREATE TABLE IF NOT EXISTS payroll_details (
   UNIQUE (period_id, employee_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_payroll_details_period   ON payroll_details(period_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_details_employee ON payroll_details(employee_id);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_payroll_details_period   ON payroll_details(period_id);
+  CREATE INDEX IF NOT EXISTS idx_payroll_details_employee ON payroll_details(employee_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_payroll_details_updated_at
-    BEFORE UPDATE ON payroll_details FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON payroll_details FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- HISTORIAL DE PAGOS DE OBLIGACIONES POR NÓMINA
@@ -265,8 +273,10 @@ CREATE TABLE IF NOT EXISTS obligation_payment_records (
   UNIQUE (employee_id, obligation_id, payroll_period_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_obl_pmt_records_employee ON obligation_payment_records(employee_id);
-CREATE INDEX IF NOT EXISTS idx_obl_pmt_records_period   ON obligation_payment_records(payroll_period_id);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_obl_pmt_records_employee ON obligation_payment_records(employee_id);
+  CREATE INDEX IF NOT EXISTS idx_obl_pmt_records_period   ON obligation_payment_records(payroll_period_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- SALDO DE VACACIONES
@@ -301,13 +311,15 @@ CREATE TABLE IF NOT EXISTS vacation_requests (
   updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_vacation_requests_employee ON vacation_requests(employee_id);
-CREATE INDEX IF NOT EXISTS idx_vacation_requests_status   ON vacation_requests(status);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_vacation_requests_employee ON vacation_requests(employee_id);
+  CREATE INDEX IF NOT EXISTS idx_vacation_requests_status   ON vacation_requests(status);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_vacation_requests_updated_at
-    BEFORE UPDATE ON vacation_requests FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON vacation_requests FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- PLANTILLAS DE TURNO
@@ -338,8 +350,10 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
   UNIQUE (employee_id, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee ON shift_assignments(employee_id);
-CREATE INDEX IF NOT EXISTS idx_shift_assignments_date     ON shift_assignments(date);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee ON shift_assignments(employee_id);
+  CREATE INDEX IF NOT EXISTS idx_shift_assignments_date     ON shift_assignments(date);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- PRÉSTAMOS
@@ -358,13 +372,15 @@ CREATE TABLE IF NOT EXISTS loans (
   updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_loans_employee ON loans(employee_id);
-CREATE INDEX IF NOT EXISTS idx_loans_status   ON loans(status);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_loans_employee ON loans(employee_id);
+  CREATE INDEX IF NOT EXISTS idx_loans_status   ON loans(status);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_loans_updated_at
-    BEFORE UPDATE ON loans FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON loans FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- COMUNICADOS / ANUNCIOS
@@ -393,13 +409,15 @@ CREATE TABLE IF NOT EXISTS announcement_recipients (
   UNIQUE (announcement_id, employee_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_announcements_status    ON announcements(status);
-CREATE INDEX IF NOT EXISTS idx_announcements_scheduled ON announcements(scheduled_at) WHERE status = 'SCHEDULED';
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_announcements_status    ON announcements(status);
+  CREATE INDEX IF NOT EXISTS idx_announcements_scheduled ON announcements(scheduled_at) WHERE status = 'SCHEDULED';
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_announcements_updated_at
-    BEFORE UPDATE ON announcements FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON announcements FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- CONDOMINIO — CONFIGURACIÓN
@@ -413,17 +431,23 @@ CREATE TABLE IF NOT EXISTS condo_config (
   fixed_security    NUMERIC(10,2) NOT NULL DEFAULT 0,
   fixed_cleaning    NUMERIC(10,2) NOT NULL DEFAULT 0,
   fixed_other       NUMERIC(10,2) NOT NULL DEFAULT 0,
-  mora_enabled      BOOLEAN       NOT NULL DEFAULT TRUE,
-  mora_rate         NUMERIC(5,4)  NOT NULL DEFAULT 0.02,  -- porcentaje mensual (ej: 0.02 = 2%)
-  mora_grace_days   SMALLINT      NOT NULL DEFAULT 5,
-  created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  mora_enabled           BOOLEAN       NOT NULL DEFAULT TRUE,
+  mora_rate              NUMERIC(5,4)  NOT NULL DEFAULT 0.02,  -- porcentaje mensual (ej: 0.02 = 2%)
+  mora_grace_days        SMALLINT      NOT NULL DEFAULT 5,
+  capital_reserve_pct    NUMERIC(5,2)  NOT NULL DEFAULT 0,    -- % del total de gastos para fondo de capital
+  capital_reserve_type   VARCHAR(10)   NOT NULL DEFAULT 'PERCENTAGE'
+                           CHECK (capital_reserve_type IN ('PERCENTAGE','FIXED')),
+  bad_debt_pct           NUMERIC(5,2)  NOT NULL DEFAULT 0,    -- % del total de gastos para prov. incobrables
+  bad_debt_type          VARCHAR(10)   NOT NULL DEFAULT 'PERCENTAGE'
+                           CHECK (bad_debt_type IN ('PERCENTAGE','FIXED')),
+  created_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
 DO $$ BEGIN
   CREATE TRIGGER trg_condo_config_updated_at
-    BEFORE UPDATE ON condo_config FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON condo_config FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- CONDOMINIO — CO-PROPIETARIOS
@@ -444,8 +468,8 @@ CREATE TABLE IF NOT EXISTS condo_owners (
 
 DO $$ BEGIN
   CREATE TRIGGER trg_condo_owners_updated_at
-    BEFORE UPDATE ON condo_owners FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON condo_owners FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- CONDOMINIO — PERÍODOS DE GASTO
@@ -459,10 +483,14 @@ CREATE TABLE IF NOT EXISTS condo_expense_periods (
   fixed_security    NUMERIC(10,2) NOT NULL DEFAULT 0,
   fixed_cleaning    NUMERIC(10,2) NOT NULL DEFAULT 0,
   fixed_other       NUMERIC(10,2) NOT NULL DEFAULT 0,
-  variable_expenses NUMERIC(10,2) NOT NULL DEFAULT 0,
-  variable_notes    TEXT,
-  total_expenses    NUMERIC(10,2) NOT NULL DEFAULT 0,
-  status            period_status NOT NULL DEFAULT 'DRAFT',
+  variable_expenses  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  variable_notes     TEXT,
+  total_expenses     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  capital_reserve    NUMERIC(10,2) NOT NULL DEFAULT 0,    -- snapshot: fondo de capital del período
+  bad_debt_provision NUMERIC(10,2) NOT NULL DEFAULT 0,    -- snapshot: provisión incobrables del período
+  total_provisions   NUMERIC(10,2) NOT NULL DEFAULT 0,    -- capital_reserve + bad_debt_provision
+  grand_total        NUMERIC(10,2) NOT NULL DEFAULT 0,    -- total_expenses + total_provisions
+  status             period_status NOT NULL DEFAULT 'DRAFT',
   notes             TEXT,
   generated_at      TIMESTAMPTZ,
   closed_at         TIMESTAMPTZ,
@@ -474,8 +502,8 @@ CREATE TABLE IF NOT EXISTS condo_expense_periods (
 
 DO $$ BEGIN
   CREATE TRIGGER trg_condo_expense_periods_updated_at
-    BEFORE UPDATE ON condo_expense_periods FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON condo_expense_periods FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- CONDOMINIO — PAGOS DE ALÍCUOTA
@@ -500,28 +528,184 @@ CREATE TABLE IF NOT EXISTS aliquot_payments (
   UNIQUE (period_id, owner_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_aliquot_payments_period ON aliquot_payments(period_id);
-CREATE INDEX IF NOT EXISTS idx_aliquot_payments_owner  ON aliquot_payments(owner_id);
-CREATE INDEX IF NOT EXISTS idx_aliquot_payments_status ON aliquot_payments(status);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='aliquot_payments' AND column_name='extra_amount') THEN
+    ALTER TABLE aliquot_payments DROP COLUMN extra_amount;
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='aliquot_payments' AND column_name='extra_notes') THEN
+    ALTER TABLE aliquot_payments DROP COLUMN extra_notes;
+  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payments_period ON aliquot_payments(period_id);
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payments_owner  ON aliquot_payments(owner_id);
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payments_status ON aliquot_payments(status);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TRIGGER trg_aliquot_payments_updated_at
-    BEFORE UPDATE ON aliquot_payments FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    BEFORE UPDATE ON aliquot_payments FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
+-- CONDOMINIO — EXTRAS POR PAGO DE ALÍCUOTA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS aliquot_payment_extras (
+  id          VARCHAR(36)   NOT NULL PRIMARY KEY,
+  payment_id  VARCHAR(36)   NOT NULL REFERENCES aliquot_payments(id) ON DELETE CASCADE,
+  amount      NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  notes       TEXT          NOT NULL DEFAULT '',
+  created_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_payment_extras_payment ON aliquot_payment_extras(payment_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_payment_extras_updated_at
+    BEFORE UPDATE ON aliquot_payment_extras FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
+-- CONDOMINIO — ÍTEMS DE GASTO CONFIGURABLES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS condo_expense_items (
+  id            VARCHAR(36)   NOT NULL PRIMARY KEY,
+  name          VARCHAR(200)  NOT NULL,
+  description   TEXT,
+  category      VARCHAR(50)   NOT NULL DEFAULT 'OTHER'
+                  CHECK (category IN ('MAINTENANCE','SECURITY','CLEANING','UTILITIES','ADMINISTRATION','OTHER')),
+  expense_type  VARCHAR(10)   NOT NULL CHECK (expense_type IN ('FIXED','VARIABLE')),
+  amount        NUMERIC(10,2) NOT NULL DEFAULT 0,
+  is_active     BOOLEAN       NOT NULL DEFAULT TRUE,
+  is_recurring  BOOLEAN       NOT NULL DEFAULT TRUE,
+  display_order INT           NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_condo_expense_items_updated_at
+    BEFORE UPDATE ON condo_expense_items FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- Ítems de gasto por período (snapshot para auditoría / recálculo)
+CREATE TABLE IF NOT EXISTS condo_period_expense_items (
+  id              VARCHAR(36)   NOT NULL PRIMARY KEY,
+  period_id       VARCHAR(36)   NOT NULL REFERENCES condo_expense_periods(id) ON DELETE CASCADE,
+  expense_item_id VARCHAR(36)   REFERENCES condo_expense_items(id) ON DELETE SET NULL,
+  name            VARCHAR(200)  NOT NULL,
+  category        VARCHAR(50)   NOT NULL DEFAULT 'OTHER',
+  expense_type    VARCHAR(10)   NOT NULL CHECK (expense_type IN ('FIXED','VARIABLE')),
+  amount          NUMERIC(10,2) NOT NULL,
+  notes           TEXT,
+  created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_period_expense_items_period ON condo_period_expense_items(period_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
+-- CONDOMINIO — CATÁLOGO DE PROVISIONES FINANCIERAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS provision_catalog (
+  id           VARCHAR(36)   NOT NULL PRIMARY KEY,
+  name         VARCHAR(200)  NOT NULL,
+  description  TEXT          NOT NULL DEFAULT '',
+  calc_type    VARCHAR(10)   NOT NULL DEFAULT 'PERCENTAGE'
+                 CHECK (calc_type IN ('PERCENTAGE','FIXED','VARIABLE')),
+  value        NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (value >= 0),
+  is_active    BOOLEAN       NOT NULL DEFAULT TRUE,
+  sort_order   SMALLINT      NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- Provisiones iniciales (idempotente)
+DO $$ BEGIN
+  INSERT INTO provision_catalog (id, name, description, calc_type, value, is_active, sort_order)
+  VALUES
+    ('00000000-0000-0000-0001-000000000001', 'Fondo de Capital',
+     'Reserva para mantenimientos mayores y reposición de activos',
+     'PERCENTAGE', 0, TRUE, 1),
+    ('00000000-0000-0000-0001-000000000002', 'Provisión Incobrables',
+     'Reserva para cubrir alícuotas irrecuperables',
+     'PERCENTAGE', 0, TRUE, 2)
+  ON CONFLICT (id) DO NOTHING;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- ============================================================
+-- CONDOMINIO — LIBRO AUXILIAR DE FONDOS DE RESERVA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS condo_fund_entries (
+  id             VARCHAR(36)   NOT NULL PRIMARY KEY,
+  fund_type      VARCHAR(50)   NOT NULL DEFAULT 'PROVISION',
+  provision_id   VARCHAR(36)   REFERENCES provision_catalog(id) ON DELETE SET NULL,
+  amount         NUMERIC(10,2) NOT NULL,
+  entry_type     VARCHAR(15)   NOT NULL
+                   CHECK (entry_type IN ('PROVISION','EXPENDITURE','WRITE_OFF','ADJUSTMENT','REVERSAL')),
+  period_id      VARCHAR(36)   REFERENCES condo_expense_periods(id) ON DELETE SET NULL,
+  description    TEXT          NOT NULL,
+  entry_date     DATE          NOT NULL DEFAULT CURRENT_DATE,
+  registered_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_fund_entries_fund_type ON condo_fund_entries(fund_type);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_fund_entries_period ON condo_fund_entries(period_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_fund_entries_entry_date ON condo_fund_entries(entry_date DESC);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
 -- MIGRACIONES INCREMENTALES (idempotentes)
 -- Se ejecutan en bases existentes para añadir columnas/tablas
 -- nuevas sin tocar datos. En instalaciones frescas los IF NOT
 -- EXISTS no encuentran nada y el bloque termina en un no-op.
+-- En hosting compartido donde el usuario no es dueño de las
+-- tablas (creadas por otro usuario), el bloque se omite por
+-- completo — las tablas ya contienen todas las columnas.
 -- ============================================================
 DO $$
 DECLARE
   v_fondo_id VARCHAR(36) := 'a0000003-0000-0000-0000-000000000003';
   v_quiro_id VARCHAR(36) := 'a0000004-0000-0000-0000-000000000004';
   v_hipo_id  VARCHAR(36) := 'a0000005-0000-0000-0000-000000000005';
+  v_owner    TEXT;
 BEGIN
-  -- ── employees: columnas IESS (v2) ───────────────────────────
+  -- ── Guardia de propiedad ─────────────────────────────────────
+  -- Solo ejecutar ALTER TABLE si el usuario actual es dueño de
+  -- las tablas. Si no lo es (hosting compartido, otro usuario
+  -- creó las tablas), las tablas ya incluyen todas las columnas
+  -- del schema actual y no se necesita ninguna migración.
+  SELECT tableowner INTO v_owner
+  FROM pg_tables
+  WHERE schemaname = 'public' AND tablename = 'employees';
+
+  IF v_owner IS DISTINCT FROM current_user THEN
+    RETURN;
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'employees'
@@ -568,6 +752,95 @@ BEGIN
       AND column_name = 'variable_notes'
   ) THEN
     ALTER TABLE condo_expense_periods ADD COLUMN variable_notes TEXT;
+  END IF;
+
+  -- ── condo_config: porcentajes de provisión (v4) ─────────────
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_config'
+      AND column_name = 'capital_reserve_pct'
+  ) THEN
+    ALTER TABLE condo_config ADD COLUMN capital_reserve_pct NUMERIC(5,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_config'
+      AND column_name = 'bad_debt_pct'
+  ) THEN
+    ALTER TABLE condo_config ADD COLUMN bad_debt_pct NUMERIC(5,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  -- ── condo_config: tipos de provisión (v6) ───────────────────
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_config'
+      AND column_name = 'capital_reserve_type'
+  ) THEN
+    ALTER TABLE condo_config ADD COLUMN capital_reserve_type VARCHAR(10) NOT NULL DEFAULT 'PERCENTAGE'
+      CHECK (capital_reserve_type IN ('PERCENTAGE','FIXED'));
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_config'
+      AND column_name = 'bad_debt_type'
+  ) THEN
+    ALTER TABLE condo_config ADD COLUMN bad_debt_type VARCHAR(10) NOT NULL DEFAULT 'PERCENTAGE'
+      CHECK (bad_debt_type IN ('PERCENTAGE','FIXED'));
+  END IF;
+
+  -- ── condo_expense_periods: provisiones y grand_total (v4) ───
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_expense_periods'
+      AND column_name = 'capital_reserve'
+  ) THEN
+    ALTER TABLE condo_expense_periods ADD COLUMN capital_reserve NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_expense_periods'
+      AND column_name = 'bad_debt_provision'
+  ) THEN
+    ALTER TABLE condo_expense_periods ADD COLUMN bad_debt_provision NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_expense_periods'
+      AND column_name = 'total_provisions'
+  ) THEN
+    ALTER TABLE condo_expense_periods ADD COLUMN total_provisions NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'condo_expense_periods'
+      AND column_name = 'grand_total'
+  ) THEN
+    ALTER TABLE condo_expense_periods ADD COLUMN grand_total NUMERIC(10,2) NOT NULL DEFAULT 0;
+  END IF;
+
+  -- ── condo_fund_entries: tabla del libro auxiliar (v4) ───────
+  IF NOT EXISTS (
+    SELECT FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'condo_fund_entries'
+  ) THEN
+    CREATE TABLE condo_fund_entries (
+      id             VARCHAR(36)   NOT NULL PRIMARY KEY,
+      fund_type      VARCHAR(20)   NOT NULL
+                       CHECK (fund_type IN ('CAPITAL_RESERVE', 'BAD_DEBT')),
+      amount         NUMERIC(10,2) NOT NULL,
+      entry_type     VARCHAR(15)   NOT NULL
+                       CHECK (entry_type IN ('PROVISION','EXPENDITURE','WRITE_OFF','ADJUSTMENT','REVERSAL')),
+      period_id      VARCHAR(36)   REFERENCES condo_expense_periods(id) ON DELETE SET NULL,
+      description    TEXT          NOT NULL,
+      entry_date     DATE          NOT NULL DEFAULT CURRENT_DATE,
+      registered_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+      created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+    );
   END IF;
 
   -- ── obligation_catalog: payment_mode (v4) ───────────────────
@@ -654,6 +927,8 @@ END $$;
 -- SEMILLA — CATÁLOGO DE OBLIGACIONES BASE
 -- ============================================================
 
+DO $seed$ BEGIN
+
 INSERT INTO obligation_catalog
   (id, code, name, description, calc_type, default_value, payer, recipient,
    is_system, is_active, display_order, payment_mode, payment_month, payment_day)
@@ -693,3 +968,71 @@ VALUES
    'Decimocuarto sueldo — 1/12 del SBU vigente (provisión mensual; ajustar default_value = SBU/12)',
    'FIXED', 38.33, 'EMPLOYER', 'EMPLOYEE', TRUE, TRUE, 7, 'MONTHLY', NULL, NULL)
 ON CONFLICT (code) DO NOTHING;
+
+EXCEPTION WHEN OTHERS THEN NULL;
+END $seed$;
+
+-- ============================================================
+-- MIGRACIÓN INCREMENTAL — provision_catalog + condo_fund_entries
+-- Bloques independientes con EXCEPTION WHEN OTHERS THEN NULL
+-- para bases existentes donde el usuario puede no ser dueño.
+-- ============================================================
+
+-- Crear provision_catalog en bases existentes (si no existe)
+DO $$ BEGIN
+  CREATE TABLE IF NOT EXISTS provision_catalog (
+    id           VARCHAR(36)   NOT NULL PRIMARY KEY,
+    name         VARCHAR(200)  NOT NULL,
+    description  TEXT          NOT NULL DEFAULT '',
+    calc_type    VARCHAR(10)   NOT NULL DEFAULT 'PERCENTAGE'
+                   CHECK (calc_type IN ('PERCENTAGE','FIXED','VARIABLE')),
+    value        NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (value >= 0),
+    is_active    BOOLEAN       NOT NULL DEFAULT TRUE,
+    sort_order   SMALLINT      NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  );
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Provisiones iniciales en bases existentes (idempotente)
+DO $$ BEGIN
+  INSERT INTO provision_catalog (id, name, description, calc_type, value, is_active, sort_order)
+  VALUES
+    ('00000000-0000-0000-0001-000000000001', 'Fondo de Capital',
+     'Reserva para mantenimientos mayores y reposición de activos',
+     'PERCENTAGE', 0, TRUE, 1),
+    ('00000000-0000-0000-0001-000000000002', 'Provisión Incobrables',
+     'Reserva para cubrir alícuotas irrecuperables',
+     'PERCENTAGE', 0, TRUE, 2)
+  ON CONFLICT (id) DO NOTHING;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Eliminar CHECK constraint de fund_type en condo_fund_entries
+DO $$ BEGIN
+  ALTER TABLE condo_fund_entries
+    DROP CONSTRAINT IF EXISTS condo_fund_entries_fund_type_check;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Añadir columna provision_id a condo_fund_entries
+DO $$ BEGIN
+  ALTER TABLE condo_fund_entries
+    ADD COLUMN IF NOT EXISTS provision_id VARCHAR(36)
+      REFERENCES provision_catalog(id) ON DELETE SET NULL;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Ampliar CHECK de provision_catalog.calc_type para incluir VARIABLE
+DO $$ BEGIN
+  ALTER TABLE provision_catalog
+    DROP CONSTRAINT IF EXISTS provision_catalog_calc_type_check;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE provision_catalog
+    ADD CONSTRAINT provision_catalog_calc_type_check
+      CHECK (calc_type IN ('PERCENTAGE','FIXED','VARIABLE'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;

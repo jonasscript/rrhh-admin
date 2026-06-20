@@ -1,0 +1,220 @@
+<p-toast />
+<p-confirmDialog />
+
+<div class="page">
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-left">
+      <h2>Gastos del Condominio</h2>
+      <p class="header-subtitle">Configura los ítems de gasto que se usarán para calcular las alícuotas mensuales.</p>
+    </div>
+    <button pButton icon="pi pi-plus" label="Nuevo ítem" class="p-button-sm" (click)="openCreate()"></button>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary-grid">
+    <div class="summary-card summary-card--fixed">
+      <div class="summary-icon"><i class="pi pi-lock"></i></div>
+      <div class="summary-body">
+        <span class="summary-label">Total gastos fijos activos</span>
+        <span class="summary-value">{{ data.totalFixed | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-sub">{{ fixedItems.length }} ítems</span>
+      </div>
+    </div>
+    <div class="summary-card summary-card--variable">
+      <div class="summary-icon"><i class="pi pi-sliders-h"></i></div>
+      <div class="summary-body">
+        <span class="summary-label">Total gastos variables activos</span>
+        <span class="summary-value">{{ data.totalVariable | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-sub">{{ variableItems.length }} ítems</span>
+      </div>
+    </div>
+    <div class="summary-card summary-card--total">
+      <div class="summary-icon"><i class="pi pi-calculator"></i></div>
+      <div class="summary-body">
+        <span class="summary-label">Base para alícuotas</span>
+        <span class="summary-value">{{ activeRecurringTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-sub">Ítems activos y recurrentes</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <p-table
+    [value]="data.items"
+    [loading]="loading"
+    styleClass="p-datatable-sm p-datatable-gridlines expense-table"
+    [rowHover]="true"
+    sortField="displayOrder"
+    [sortOrder]="1"
+    [paginator]="data.items.length > 15"
+    [rows]="15"
+  >
+    <ng-template pTemplate="header">
+      <tr>
+        <th pSortableColumn="name" style="min-width:180px">Nombre <p-sortIcon field="name" /></th>
+        <th pSortableColumn="category" style="width:150px">Categoría <p-sortIcon field="category" /></th>
+        <th pSortableColumn="expenseType" style="width:110px">Tipo <p-sortIcon field="expenseType" /></th>
+        <th pSortableColumn="amount" style="width:130px">Monto <p-sortIcon field="amount" /></th>
+        <th style="width:100px">Recurrente</th>
+        <th style="width:90px">Estado</th>
+        <th style="width:110px">Acciones</th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-item>
+      <tr [class.row-inactive]="!item.isActive">
+        <td>
+          <div class="item-name">
+            <i class="pi {{ categoryIcon(item.category) }} item-icon"></i>
+            <span>{{ item.name }}</span>
+          </div>
+          @if (item.description) {
+            <div class="item-desc">{{ item.description }}</div>
+          }
+        </td>
+        <td>
+          <span class="category-chip category-chip--{{ item.category.toLowerCase() }}">
+            {{ categoryLabel(item.category) }}
+          </span>
+        </td>
+        <td>
+          <p-tag [value]="typeLabel(item.expenseType)" [severity]="typeSeverity(item.expenseType)" />
+        </td>
+        <td class="amount-cell">{{ item.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+        <td class="center-cell">
+          @if (item.isRecurring) {
+            <i class="pi pi-check-circle text-green-500" pTooltip="Se incluye automáticamente en nuevos períodos"></i>
+          } @else {
+            <i class="pi pi-minus-circle text-color-secondary" pTooltip="No se incluye automáticamente"></i>
+          }
+        </td>
+        <td class="center-cell">
+          <p-tag
+            [value]="item.isActive ? 'Activo' : 'Inactivo'"
+            [severity]="item.isActive ? 'success' : 'secondary'"
+          />
+        </td>
+        <td class="actions-cell">
+          <button pButton icon="pi pi-pencil" class="p-button-text p-button-sm p-button-rounded"
+            pTooltip="Editar" (click)="openEdit(item)"></button>
+          <button pButton
+            [icon]="item.isActive ? 'pi pi-eye-slash' : 'pi pi-eye'"
+            class="p-button-text p-button-sm p-button-rounded p-button-secondary"
+            [pTooltip]="item.isActive ? 'Desactivar' : 'Activar'"
+            (click)="toggle(item)"></button>
+          <button pButton icon="pi pi-trash" class="p-button-text p-button-sm p-button-rounded p-button-danger"
+            pTooltip="Eliminar" (click)="confirmDelete(item)"></button>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="emptymessage">
+      <tr>
+        <td colspan="7">
+          <div class="empty-state">
+            <i class="pi pi-inbox"></i>
+            <p>No hay ítems de gasto configurados.</p>
+            <button pButton label="Agregar el primero" icon="pi pi-plus" class="p-button-outlined p-button-sm" (click)="openCreate()"></button>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="footer">
+      <tr class="footer-total">
+        <td colspan="3"><strong>Total activo recurrente</strong></td>
+        <td class="amount-cell"><strong>{{ activeRecurringTotal | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+        <td colspan="3"></td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>
+
+<!-- Dialog: crear / editar ítem -->
+<p-dialog
+  [(visible)]="showDialog"
+  [header]="editing ? 'Editar ítem de gasto' : 'Nuevo ítem de gasto'"
+  [modal]="true"
+  [style]="{ width: '480px' }"
+  [draggable]="false"
+>
+  <form [formGroup]="form" (ngSubmit)="save()" class="item-form">
+    <div class="form-row">
+      <div class="field field--full">
+        <label>Nombre del gasto *</label>
+        <input pInputText formControlName="name" class="w-full" placeholder="Ej: Mantenimiento áreas comunes" />
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
+        <label>Categoría *</label>
+        <p-dropdown
+          formControlName="category"
+          [options]="categoryOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Seleccionar"
+          styleClass="w-full"
+        />
+      </div>
+      <div class="field">
+        <label>Tipo *</label>
+        <p-selectButton
+          formControlName="expenseType"
+          [options]="typeOptions"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="type-toggle"
+        />
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="field">
+        <label>Monto mensual *</label>
+        <p-inputNumber
+          formControlName="amount"
+          [min]="0" [minFractionDigits]="2" [maxFractionDigits]="2"
+          prefix="$"
+          styleClass="w-full"
+          inputStyleClass="w-full"
+        />
+      </div>
+      <div class="field">
+        <label>Orden de visualización</label>
+        <p-inputNumber
+          formControlName="displayOrder"
+          [min]="0"
+          styleClass="w-full"
+          inputStyleClass="w-full"
+        />
+      </div>
+    </div>
+
+    <div class="field field--full">
+      <label>Descripción</label>
+      <textarea pInputTextarea formControlName="description" rows="2" class="w-full"
+        placeholder="Descripción opcional"></textarea>
+    </div>
+
+    <div class="field field--checkbox">
+      <p-selectButton
+        formControlName="isRecurring"
+        [options]="[{ label: 'Incluir en períodos automáticamente', value: true }, { label: 'Solo manual', value: false }]"
+        optionLabel="label"
+        optionValue="value"
+        styleClass="recurring-toggle"
+      />
+      <small class="text-color-secondary">Si está activado, este ítem se incluirá en todos los períodos nuevos.</small>
+    </div>
+  </form>
+
+  <ng-template pTemplate="footer">
+    <button pButton label="Cancelar" icon="pi pi-times" class="p-button-text p-button-secondary"
+      (click)="showDialog = false"></button>
+    <button pButton [label]="editing ? 'Guardar cambios' : 'Crear ítem'" icon="pi pi-check"
+      [loading]="saving" [disabled]="form.invalid" (click)="save()"></button>
+  </ng-template>
+</p-dialog>

@@ -9,7 +9,7 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { uploadSingle } = require('../../services/upload.service');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../../services/cloudinary.service');
 const { sendAliquotEmail }   = require('../../services/email.service');
-const { generateAliquotPdf } = require('../../services/pdf.service');
+const { generateAliquotPdf, generateBalancePdf } = require('../../services/pdf.service');
 const { newId }  = require('../../utils/id');
 
 // Multer en memoria solo para la importación de Excel (sin Cloudinary)
@@ -41,7 +41,177 @@ const OWNER_COLS = `
 
 // ── Config ────────────────────────────────────────────────────
 
-// GET /condominium/config
+// GET /condominium/expense-items
+router.get('/expense-items', async (_req, res) => {
+  const { rows } = await query(
+    `SELECT id, name, description, category, expense_type AS "expenseType",
+            amount::float, is_active AS "isActive", is_recurring AS "isRecurring",
+            display_order AS "displayOrder", created_at AS "createdAt"
+     FROM condo_expense_items
+     ORDER BY display_order, created_at`
+  );
+  const totalFixed    = rows.filter(r => r.isActive && r.isRecurring && r.expenseType === 'FIXED')
+                             .reduce((s, r) => s + r.amount, 0);
+  const totalVariable = rows.filter(r => r.isActive && r.isRecurring && r.expenseType === 'VARIABLE')
+                             .reduce((s, r) => s + r.amount, 0);
+  success(res, { items: rows, totalFixed, totalVariable, total: totalFixed + totalVariable });
+});
+
+// POST /condominium/expense-items
+router.post('/expense-items', authorize('ADMIN'), async (req, res) => {
+  const data = z.object({
+    name:         z.string().min(2),
+    description:  z.string().nullish(),
+    category:     z.enum(['MAINTENANCE','SECURITY','CLEANING','UTILITIES','ADMINISTRATION','OTHER']).default('OTHER'),
+    expenseType:  z.enum(['FIXED','VARIABLE']),
+    amount:       z.number().min(0),
+    isActive:     z.boolean().default(true),
+    isRecurring:  z.boolean().default(true),
+    displayOrder: z.number().int().default(0),
+  }).parse(req.body);
+
+  const { rows } = await query(
+    `INSERT INTO condo_expense_items
+       (id, name, description, category, expense_type, amount, is_active, is_recurring, display_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING id, name, description, category, expense_type AS "expenseType",
+               amount::float, is_active AS "isActive", is_recurring AS "isRecurring",
+               display_order AS "displayOrder", created_at AS "createdAt"`,
+    [newId(), data.name, data.description || null, data.category, data.expenseType,
+     data.amount, data.isActive, data.isRecurring, data.displayOrder]
+  );
+  success(res, rows[0], 201);
+});
+
+// PUT /condominium/expense-items/:id
+router.put('/expense-items/:id', authorize('ADMIN'), async (req, res) => {
+  const data = z.object({
+    name:         z.string().min(2).optional(),
+    description:  z.string().optional().nullable(),
+    category:     z.enum(['MAINTENANCE','SECURITY','CLEANING','UTILITIES','ADMINISTRATION','OTHER']).optional(),
+    expenseType:  z.enum(['FIXED','VARIABLE']).optional(),
+    amount:       z.number().min(0).optional(),
+    isActive:     z.boolean().optional(),
+    isRecurring:  z.boolean().optional(),
+    displayOrder: z.number().int().optional(),
+  }).parse(req.body);
+
+  const { rows } = await query(
+    `UPDATE condo_expense_items SET
+       name          = COALESCE($1, name),
+       description   = COALESCE($2, description),
+       category      = COALESCE($3, category),
+       expense_type  = COALESCE($4, expense_type),
+       amount        = COALESCE($5, amount),
+       is_active     = COALESCE($6, is_active),
+       is_recurring  = COALESCE($7, is_recurring),
+       display_order = COALESCE($8, display_order)
+     WHERE id = $9
+     RETURNING id, name, description, category, expense_type AS "expenseType",
+               amount::float, is_active AS "isActive", is_recurring AS "isRecurring",
+               display_order AS "displayOrder", created_at AS "createdAt"`,
+    [data.name || null, data.description ?? null, data.category || null, data.expenseType || null,
+     data.amount ?? null, data.isActive ?? null, data.isRecurring ?? null, data.displayOrder ?? null,
+     req.params.id]
+  );
+  if (!rows[0]) throw new AppError('Ítem de gasto no encontrado', 404);
+  success(res, rows[0]);
+});
+
+// PATCH /condominium/expense-items/:id/toggle
+router.patch('/expense-items/:id/toggle', authorize('ADMIN'), async (req, res) => {
+  const { rows } = await query(
+    `UPDATE condo_expense_items SET is_active = NOT is_active WHERE id = $1
+     RETURNING id, name, is_active AS "isActive"`,
+    [req.params.id]
+  );
+  if (!rows[0]) throw new AppError('Ítem de gasto no encontrado', 404);
+  success(res, rows[0]);
+});
+
+// DELETE /condominium/expense-items/:id
+router.delete('/expense-items/:id', authorize('ADMIN'), async (req, res) => {
+  const { rows } = await query(
+    'DELETE FROM condo_expense_items WHERE id = $1 RETURNING id',
+    [req.params.id]
+  );
+  if (!rows[0]) throw new AppError('Ítem de gasto no encontrado', 404);
+  success(res, null, 200, 'Ítem eliminado');
+});
+
+// ── Catálogo de Provisiones ────────────────────────────────────
+
+// GET /condominium/provision-catalog
+router.get('/provision-catalog', async (_req, res) => {
+  const { rows } = await query(
+    `SELECT * FROM provision_catalog ORDER BY sort_order, created_at`
+  );
+  success(res, rows);
+});
+
+// POST /condominium/provision-catalog
+router.post('/provision-catalog', authorize('ADMIN'), async (req, res) => {
+  const data = z.object({
+    name:        z.string().min(2).max(200),
+    description: z.string().max(500).default(''),
+    calcType:    z.enum(['PERCENTAGE','FIXED','VARIABLE']).default('PERCENTAGE'),
+    value:       z.number().min(0),
+    isActive:    z.boolean().default(true),
+    sortOrder:   z.number().int().default(0),
+  }).parse(req.body);
+  const { rows } = await query(
+    `INSERT INTO provision_catalog (id, name, description, calc_type, value, is_active, sort_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [newId(), data.name, data.description, data.calcType, data.value, data.isActive, data.sortOrder]
+  );
+  success(res, rows[0], 201);
+});
+
+// PATCH /condominium/provision-catalog/:id
+router.patch('/provision-catalog/:id', authorize('ADMIN'), async (req, res) => {
+  const data = z.object({
+    name:        z.string().min(2).max(200).optional(),
+    description: z.string().max(500).optional(),
+    calcType:    z.enum(['PERCENTAGE','FIXED','VARIABLE']).optional(),
+    value:       z.number().min(0).optional(),
+    isActive:    z.boolean().optional(),
+    sortOrder:   z.number().int().optional(),
+  }).parse(req.body);
+  const { rows } = await query(
+    `UPDATE provision_catalog SET
+       name        = COALESCE($1, name),
+       description = COALESCE($2, description),
+       calc_type   = COALESCE($3, calc_type),
+       value       = COALESCE($4, value),
+       is_active   = COALESCE($5, is_active),
+       sort_order  = COALESCE($6, sort_order),
+       updated_at  = NOW()
+     WHERE id = $7 RETURNING *`,
+    [data.name ?? null, data.description ?? null, data.calcType ?? null,
+     data.value ?? null, data.isActive ?? null, data.sortOrder ?? null,
+     req.params.id]
+  );
+  if (!rows.length) throw new AppError('Provisión no encontrada', 404);
+  success(res, rows[0]);
+});
+
+// DELETE /condominium/provision-catalog/:id
+router.delete('/provision-catalog/:id', authorize('ADMIN'), async (req, res) => {
+  const usage = await query(
+    `SELECT COUNT(*)::int AS cnt FROM condo_fund_entries WHERE provision_id = $1`,
+    [req.params.id]
+  );
+  if (usage.rows[0].cnt > 0) {
+    throw new AppError('No se puede eliminar: esta provisión tiene movimientos registrados. Desactívela en su lugar.', 400);
+  }
+  const { rows } = await query(
+    'DELETE FROM provision_catalog WHERE id = $1 RETURNING id', [req.params.id]
+  );
+  if (!rows.length) throw new AppError('Provisión no encontrada', 404);
+  success(res, null, 200, 'Provisión eliminada');
+});
+
+// ── Config ────────────────────────────────────────────────────
 router.get('/config', async (_req, res) => {
   const { rows } = await query('SELECT * FROM condo_config LIMIT 1');
   success(res, rows[0] || null);
@@ -50,15 +220,19 @@ router.get('/config', async (_req, res) => {
 // PUT /condominium/config
 router.put('/config', authorize('ADMIN'), async (req, res) => {
   const data = z.object({
-    name:             z.string().optional(),
-    adminEmail:       z.string().email().optional(),
-    fixedMaintenance: z.number().min(0).optional(),
-    fixedSecurity:    z.number().min(0).optional(),
-    fixedCleaning:    z.number().min(0).optional(),
-    fixedOther:       z.number().min(0).optional(),
-    moraEnabled:      z.boolean().optional(),
-    moraRate:         z.number().min(0).max(1).optional(),
-    moraGraceDays:    z.number().int().min(0).optional(),
+    name:               z.string().optional(),
+    adminEmail:         z.string().email().optional(),
+    fixedMaintenance:   z.number().min(0).optional(),
+    fixedSecurity:      z.number().min(0).optional(),
+    fixedCleaning:      z.number().min(0).optional(),
+    fixedOther:         z.number().min(0).optional(),
+    moraEnabled:        z.boolean().optional(),
+    moraRate:           z.number().min(0).max(1).optional(),
+    moraGraceDays:      z.number().int().min(0).optional(),
+    capitalReservePct:  z.number().min(0).optional(),
+    capitalReserveType: z.enum(['PERCENTAGE','FIXED']).optional(),
+    badDebtPct:         z.number().min(0).optional(),
+    badDebtType:        z.enum(['PERCENTAGE','FIXED']).optional(),
   }).parse(req.body);
 
   const existing = await query('SELECT id FROM condo_config LIMIT 1');
@@ -67,8 +241,9 @@ router.put('/config', authorize('ADMIN'), async (req, res) => {
     const { rows } = await query(
       `INSERT INTO condo_config
          (id, name, admin_email, fixed_maintenance, fixed_security, fixed_cleaning, fixed_other,
-          mora_enabled, mora_rate, mora_grace_days)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          mora_enabled, mora_rate, mora_grace_days,
+          capital_reserve_pct, capital_reserve_type, bad_debt_pct, bad_debt_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [
         newId(),
         data.name || 'Condominio',
@@ -80,6 +255,10 @@ router.put('/config', authorize('ADMIN'), async (req, res) => {
         data.moraEnabled      ?? true,
         data.moraRate         || 0.02,
         data.moraGraceDays    || 5,
+        data.capitalReservePct  || 0,
+        data.capitalReserveType || 'PERCENTAGE',
+        data.badDebtPct         || 0,
+        data.badDebtType        || 'PERCENTAGE',
       ]
     );
     return success(res, rows[0], 201);
@@ -87,22 +266,28 @@ router.put('/config', authorize('ADMIN'), async (req, res) => {
 
   const { rows } = await query(
     `UPDATE condo_config SET
-       name              = COALESCE($1, name),
-       admin_email       = COALESCE($2, admin_email),
-       fixed_maintenance = COALESCE($3, fixed_maintenance),
-       fixed_security    = COALESCE($4, fixed_security),
-       fixed_cleaning    = COALESCE($5, fixed_cleaning),
-       fixed_other       = COALESCE($6, fixed_other),
-       mora_enabled      = COALESCE($7, mora_enabled),
-       mora_rate         = COALESCE($8, mora_rate),
-       mora_grace_days   = COALESCE($9, mora_grace_days)
-     WHERE id = $10 RETURNING *`,
+       name                 = COALESCE($1,  name),
+       admin_email          = COALESCE($2,  admin_email),
+       fixed_maintenance    = COALESCE($3,  fixed_maintenance),
+       fixed_security       = COALESCE($4,  fixed_security),
+       fixed_cleaning       = COALESCE($5,  fixed_cleaning),
+       fixed_other          = COALESCE($6,  fixed_other),
+       mora_enabled         = COALESCE($7,  mora_enabled),
+       mora_rate            = COALESCE($8,  mora_rate),
+       mora_grace_days      = COALESCE($9,  mora_grace_days),
+       capital_reserve_pct  = COALESCE($10, capital_reserve_pct),
+       capital_reserve_type = COALESCE($11, capital_reserve_type),
+       bad_debt_pct         = COALESCE($12, bad_debt_pct),
+       bad_debt_type        = COALESCE($13, bad_debt_type)
+     WHERE id = $14 RETURNING *`,
     [
       data.name || null, data.adminEmail || null,
-      data.fixedMaintenance ?? null, data.fixedSecurity ?? null,
-      data.fixedCleaning    ?? null, data.fixedOther    ?? null,
-      data.moraEnabled      ?? null, data.moraRate      ?? null,
-      data.moraGraceDays    ?? null,
+      data.fixedMaintenance  ?? null, data.fixedSecurity    ?? null,
+      data.fixedCleaning     ?? null, data.fixedOther       ?? null,
+      data.moraEnabled       ?? null, data.moraRate         ?? null,
+      data.moraGraceDays     ?? null,
+      data.capitalReservePct  ?? null, data.capitalReserveType || null,
+      data.badDebtPct         ?? null, data.badDebtType        || null,
       existing.rows[0].id,
     ]
   );
@@ -313,7 +498,45 @@ router.get('/periods/:id', async (req, res) => {
   if (!periodRes.rows[0]) throw new AppError('Período no encontrado', 404);
 
   const paymentsRes = await query(
-    `SELECT ap.*, o.name AS owner_name, o.email AS owner_email, o.unit_number
+    `SELECT
+       ap.id,
+       ap.period_id              AS "periodId",
+       ap.owner_id               AS "ownerId",
+       ap.aliquot_amount::float  AS "aliquotAmount",
+       ap.mora_at_billing::float AS "moraAtBilling",
+       COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0)::float              AS "extrasTotal",
+       (ap.aliquot_amount + ap.mora_at_billing + COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0))::float             AS "totalDue",
+       ap.paid_amount::float     AS "amountPaid",
+       ap.payment_date           AS "paymentDate",
+       ap.proof_url              AS "proofUrl",
+       ap.proof_public_id        AS "proofPublicId",
+       ap.status,
+       ap.notes,
+       ap.created_at             AS "createdAt",
+       ap.updated_at             AS "updatedAt",
+       JSON_BUILD_OBJECT(
+         'id',             o.id,
+         'fullName',       o.name,
+         'apartmentNumber',o.unit_number,
+         'participationPct', o.participation_pct::float,
+         'moraAmount',     o.mora_amount::float,
+         'email',          o.email
+       ) AS owner,
+       COALESCE((
+         SELECT JSON_AGG(
+           JSON_BUILD_OBJECT(
+             'id',        e.id,
+             'amount',    e.amount::float,
+             'notes',     e.notes,
+             'createdAt', e.created_at
+           ) ORDER BY e.created_at
+         )
+         FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), '[]'::json)            AS extras
      FROM aliquot_payments ap
      JOIN condo_owners o ON o.id = ap.owner_id
      WHERE ap.period_id = $1
@@ -329,31 +552,177 @@ router.post('/periods', authorize('ADMIN'), async (req, res) => {
   const data = z.object({
     month:            z.number().int().min(1).max(12),
     year:             z.number().int().min(2000),
+    // Lista de ítems con montos explícitos (nueva UI)
+    items:            z.array(z.object({
+      expenseItemId: z.string().nullable().optional(),
+      name:          z.string().min(1).default('Gasto'),
+      category:      z.enum(['MAINTENANCE','SECURITY','CLEANING','UTILITIES','ADMINISTRATION','OTHER']).default('OTHER'),
+      expenseType:   z.enum(['FIXED','VARIABLE']).default('FIXED'),
+      amount:        z.number().min(0),
+    })).optional(),
+    // Campos legacy para compatibilidad
     variableExpenses: z.number().min(0).default(0),
+    variableNotes:    z.string().optional(),
     notes:            z.string().optional(),
+    // Provisiones seleccionadas (IDs del catálogo). Si se omite → todas las activas.
+    provisionIds:     z.array(z.string()).optional(),
+    // Montos para provisiones VARIABLE (provision_id → amount)
+    provisionAmounts: z.record(z.string(), z.number().min(0)).optional(),
   }).parse(req.body);
 
   const configRes = await query('SELECT * FROM condo_config LIMIT 1');
   const cfg = configRes.rows[0];
   if (!cfg) throw new AppError('Configure el condominio primero', 400);
 
-  const totalExpenses =
-    cfg.fixed_maintenance + cfg.fixed_security + cfg.fixed_cleaning +
-    cfg.fixed_other + data.variableExpenses;
+  const periodId = newId();
+  let snapshotItems = [];
 
+  if (data.items && data.items.length > 0) {
+    // Usar los ítems enviados por la UI (con montos ya decididos por el usuario)
+    snapshotItems = data.items.map(i => ({
+      expenseItemId: i.expenseItemId ?? null,
+      name:          i.name,
+      category:      i.category,
+      expenseType:   i.expenseType,
+      amount:        parseFloat(String(i.amount)) || 0,
+    }));
+  } else {
+    // Fallback: ítems activos y recurrentes del catálogo
+    const itemsRes = await query(
+      `SELECT * FROM condo_expense_items WHERE is_active = TRUE AND is_recurring = TRUE ORDER BY display_order, created_at`
+    );
+    if (itemsRes.rows.length > 0) {
+      snapshotItems = itemsRes.rows.map(r => ({
+        expenseItemId: r.id,
+        name:          r.name,
+        category:      r.category,
+        expenseType:   r.expense_type,
+        amount:        parseFloat(r.amount),
+      }));
+    } else {
+      // Fallback final: condo_config
+      const cfgItems = [
+        { expenseItemId: null, name: 'Mantenimiento', category: 'MAINTENANCE', expenseType: 'FIXED', amount: parseFloat(cfg.fixed_maintenance) || 0 },
+        { expenseItemId: null, name: 'Seguridad',     category: 'SECURITY',    expenseType: 'FIXED', amount: parseFloat(cfg.fixed_security)    || 0 },
+        { expenseItemId: null, name: 'Limpieza',      category: 'CLEANING',    expenseType: 'FIXED', amount: parseFloat(cfg.fixed_cleaning)    || 0 },
+        { expenseItemId: null, name: 'Otros',         category: 'OTHER',       expenseType: 'FIXED', amount: parseFloat(cfg.fixed_other)       || 0 },
+      ];
+      snapshotItems = cfgItems.filter(i => i.amount > 0);
+    }
+    if (data.variableExpenses > 0) {
+      snapshotItems.push({
+        expenseItemId: null, name: 'Gastos variables',
+        category: 'OTHER', expenseType: 'VARIABLE', amount: data.variableExpenses,
+      });
+    }
+  }
+
+  // Calcular totales por categoría (para las columnas legacy del período)
+  // Solo items de tipo FIXED para evitar doble conteo con variable_expenses
+  const sumCat = (cat) => snapshotItems.filter(i => i.category === cat && i.expenseType === 'FIXED').reduce((s, i) => s + i.amount, 0);
+  const fixedMaintenance = sumCat('MAINTENANCE');
+  const fixedSecurity    = sumCat('SECURITY');
+  const fixedCleaning    = sumCat('CLEANING');
+  const fixedOther       = snapshotItems
+    .filter(i => i.expenseType === 'FIXED' && !['MAINTENANCE','SECURITY','CLEANING'].includes(i.category))
+    .reduce((s, i) => s + i.amount, 0);
+  const variableTotal  = snapshotItems.filter(i => i.expenseType === 'VARIABLE').reduce((s, i) => s + i.amount, 0);
+  const totalExpenses  = snapshotItems.reduce((s, i) => s + i.amount, 0);
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Calcular provisiones desde el catálogo (activas y en la selección del usuario)
+    const provFilter = data.provisionIds && data.provisionIds.length > 0
+      ? `AND id = ANY($1)`
+      : '';
+    const provParams = data.provisionIds && data.provisionIds.length > 0
+      ? [data.provisionIds]
+      : [];
+    const provCatalog = await query(
+      `SELECT * FROM provision_catalog WHERE is_active = TRUE ${provFilter} ORDER BY sort_order, created_at`,
+      provParams
+    );
+    const provisionResults = provCatalog.rows.map(p => {
+      const pVal = parseFloat(p.value) || 0;
+      let amount;
+      if (p.calc_type === 'FIXED') {
+        amount = Math.round(pVal * 100) / 100;
+      } else if (p.calc_type === 'VARIABLE') {
+        const overrideAmt = data.provisionAmounts?.[p.id];
+        amount = overrideAmt != null ? Math.round(overrideAmt * 100) / 100 : 0;
+      } else {
+        amount = Math.round(totalExpenses * pVal / 100 * 100) / 100;
+      }
+      return { ...p, calculatedAmount: amount };
+    });
+    const totalProvisions = Math.round(provisionResults.reduce((s, p) => s + p.calculatedAmount, 0) * 100) / 100;
+    const grandTotal      = totalExpenses + totalProvisions;
+
+    // Valores legacy para compatibilidad con balance report
+    const capitalReserve   = totalProvisions;
+    const badDebtProvision = 0;
+
+    const { rows } = await client.query(
+      `INSERT INTO condo_expense_periods
+         (id, month, year, fixed_maintenance, fixed_security, fixed_cleaning, fixed_other,
+          variable_expenses, variable_notes, total_expenses,
+          capital_reserve, bad_debt_provision, total_provisions, grand_total,
+          notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [
+        periodId, data.month, data.year,
+        fixedMaintenance, fixedSecurity, fixedCleaning, fixedOther,
+        variableTotal, data.variableNotes || null, totalExpenses,
+        capitalReserve, badDebtProvision, totalProvisions, grandTotal,
+        data.notes || null, req.user.id,
+      ]
+    );
+
+    for (const item of snapshotItems) {
+      if (item.amount <= 0) continue;
+      await client.query(
+        `INSERT INTO condo_period_expense_items
+           (id, period_id, expense_item_id, name, category, expense_type, amount)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [newId(), periodId, item.expenseItemId, item.name, item.category, item.expenseType, item.amount]
+      );
+    }
+
+    // Crear entradas del libro auxiliar de fondos (misma transacción)
+    for (const p of provisionResults) {
+      if (p.calculatedAmount <= 0) continue;
+      await client.query(
+        `INSERT INTO condo_fund_entries
+           (id, fund_type, provision_id, amount, entry_type, period_id, description, registered_by)
+         VALUES ($1,'PROVISION',$2,$3,'PROVISION',$4,$5,$6)`,
+        [newId(), p.id, p.calculatedAmount, periodId,
+         `Provisión ${p.name} — Período ${data.month}/${data.year}`, req.user.id]
+      );
+    }
+
+    await client.query('COMMIT');
+    success(res, rows[0], 201);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// GET /condominium/periods/:id/expense-items — ítems de gasto del período
+router.get('/periods/:id/expense-items', async (req, res) => {
   const { rows } = await query(
-    `INSERT INTO condo_expense_periods
-       (id, month, year, fixed_maintenance, fixed_security, fixed_cleaning, fixed_other,
-        variable_expenses, total_expenses, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    [
-      newId(),
-      data.month, data.year,
-      cfg.fixed_maintenance, cfg.fixed_security, cfg.fixed_cleaning, cfg.fixed_other,
-      data.variableExpenses, totalExpenses, data.notes || null, req.user.id,
-    ]
+    `SELECT id, expense_item_id AS "expenseItemId", name, category,
+            expense_type AS "expenseType", amount::float, notes, created_at AS "createdAt"
+     FROM condo_period_expense_items
+     WHERE period_id = $1
+     ORDER BY expense_type DESC, amount DESC`,
+    [req.params.id]
   );
-  success(res, rows[0], 201);
+  success(res, rows);
 });
 
 // POST /condominium/periods/:id/generate — generar alícuotas
@@ -378,8 +747,12 @@ router.post('/periods/:id/generate', authorize('ADMIN'), async (req, res) => {
     await client.query('BEGIN');
 
     for (const owner of owners) {
+      // Usar grand_total si existe (períodos con provisiones), si no total_expenses (retrocompat)
+      const base = parseFloat(period.grand_total) > 0
+        ? parseFloat(period.grand_total)
+        : parseFloat(period.total_expenses);
       const aliquotAmount = Math.round(
-        parseFloat(period.total_expenses) * parseFloat(owner.participation_pct) / 100 * 100
+        base * parseFloat(owner.participation_pct) / 100 * 100
       ) / 100;
 
       await client.query(
@@ -476,6 +849,57 @@ router.post('/periods/:id/close', authorize('ADMIN'), async (req, res) => {
   }
 });
 
+// DELETE /condominium/periods/:id — eliminar período y todos sus registros
+router.delete('/periods/:id', authorize('ADMIN'), async (req, res) => {
+  const periodRes = await query('SELECT * FROM condo_expense_periods WHERE id = $1', [req.params.id]);
+  const period = periodRes.rows[0];
+  if (!period) throw new AppError('Período no encontrado', 404);
+  if (period.status === 'CLOSED') throw new AppError('No se puede eliminar un período cerrado', 400);
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Eliminar comprobantes de Cloudinary asociados a los pagos
+    const proofsRes = await client.query(
+      `SELECT proof_public_id FROM aliquot_payments WHERE period_id = $1 AND proof_public_id IS NOT NULL`,
+      [period.id]
+    );
+    for (const row of proofsRes.rows) {
+      try { await deleteFromCloudinary(row.proof_public_id); } catch (_) { /* best-effort */ }
+    }
+
+    // 2. Revertir mora acumulada en propietarios por pagos OVERDUE de este período
+    const overdueRes = await client.query(
+      `SELECT owner_id,
+              (aliquot_amount + mora_at_billing - paid_amount)::numeric AS pending
+       FROM aliquot_payments
+       WHERE period_id = $1 AND status = 'OVERDUE'`,
+      [period.id]
+    );
+    for (const row of overdueRes.rows) {
+      await client.query(
+        `UPDATE condo_owners SET mora_amount = GREATEST(0, mora_amount - $1) WHERE id = $2`,
+        [row.pending, row.owner_id]
+      );
+    }
+
+    // 3. Eliminar registros relacionados en orden de dependencia
+    await client.query('DELETE FROM aliquot_payments         WHERE period_id = $1', [period.id]);
+    await client.query('DELETE FROM condo_period_expense_items WHERE period_id = $1', [period.id]);
+    await client.query('DELETE FROM condo_fund_entries        WHERE period_id = $1', [period.id]);
+    await client.query('DELETE FROM condo_expense_periods     WHERE id = $1',        [period.id]);
+
+    await client.query('COMMIT');
+    success(res, null, 200, 'Período eliminado');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
 // ── Pagos de alícuota ─────────────────────────────────────────
 
 // POST /condominium/payments/:paymentId/register
@@ -491,7 +915,10 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
   if (!ap) throw new AppError('Pago no encontrado', 404);
   if (ap.status === 'PAID') throw new AppError('Ya fue pagado en su totalidad', 400);
 
-  const total = parseFloat(ap.aliquot_amount) + parseFloat(ap.mora_at_billing);
+  const total = parseFloat(ap.aliquot_amount) + parseFloat(ap.mora_at_billing) + (await query(
+    'SELECT COALESCE(SUM(amount),0)::float AS t FROM aliquot_payment_extras WHERE payment_id = $1',
+    [ap.id]
+  )).rows[0].t;
   const newPaid = parseFloat(ap.paid_amount) + paidAmount;
   const status  = newPaid >= total ? 'PAID' : 'PARTIAL';
 
@@ -511,6 +938,68 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
   }
 
   success(res, rows[0], 200, `Pago registrado (${status})`);
+});
+
+// ── Extras por pago ────────────────────────────────────────────
+
+// POST /condominium/payments/:paymentId/extras — agregar cargo extra
+router.post('/payments/:paymentId/extras', authorize('ADMIN'), async (req, res) => {
+  const { amount, notes } = z.object({
+    amount: z.number().positive(),
+    notes:  z.string().min(1).max(500),
+  }).parse(req.body);
+
+  const apRes = await query('SELECT id, status FROM aliquot_payments WHERE id = $1', [req.params.paymentId]);
+  if (!apRes.rows[0]) throw new AppError('Pago no encontrado', 404);
+  if (apRes.rows[0].status === 'PAID') throw new AppError('No se puede modificar un pago ya completado', 400);
+
+  const { rows } = await query(
+    `INSERT INTO aliquot_payment_extras (id, payment_id, amount, notes, created_by)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, payment_id AS "paymentId", amount::float, notes, created_at AS "createdAt"`,
+    [newId(), req.params.paymentId, amount, notes, req.user.id]
+  );
+  success(res, rows[0], 201, 'Cargo extra agregado');
+});
+
+// PATCH /condominium/extras/:extraId — editar cargo extra
+router.patch('/extras/:extraId', authorize('ADMIN'), async (req, res) => {
+  const { amount, notes } = z.object({
+    amount: z.number().positive(),
+    notes:  z.string().min(1).max(500),
+  }).parse(req.body);
+
+  const exRes = await query(
+    `SELECT e.id, ap.status FROM aliquot_payment_extras e
+     JOIN aliquot_payments ap ON ap.id = e.payment_id
+     WHERE e.id = $1`,
+    [req.params.extraId]
+  );
+  if (!exRes.rows[0]) throw new AppError('Cargo extra no encontrado', 404);
+  if (exRes.rows[0].status === 'PAID') throw new AppError('No se puede modificar un pago ya completado', 400);
+
+  const { rows } = await query(
+    `UPDATE aliquot_payment_extras SET amount = $1, notes = $2
+     WHERE id = $3
+     RETURNING id, payment_id AS "paymentId", amount::float, notes, created_at AS "createdAt"`,
+    [amount, notes, req.params.extraId]
+  );
+  success(res, rows[0], 200, 'Cargo extra actualizado');
+});
+
+// DELETE /condominium/extras/:extraId — eliminar cargo extra
+router.delete('/extras/:extraId', authorize('ADMIN'), async (req, res) => {
+  const exRes = await query(
+    `SELECT e.id, ap.status FROM aliquot_payment_extras e
+     JOIN aliquot_payments ap ON ap.id = e.payment_id
+     WHERE e.id = $1`,
+    [req.params.extraId]
+  );
+  if (!exRes.rows[0]) throw new AppError('Cargo extra no encontrado', 404);
+  if (exRes.rows[0].status === 'PAID') throw new AppError('No se puede eliminar un cargo de un pago ya completado', 400);
+
+  await query('DELETE FROM aliquot_payment_extras WHERE id = $1', [req.params.extraId]);
+  success(res, null, 200, 'Cargo extra eliminado');
 });
 
 // POST /condominium/payments/:paymentId/proof — subir comprobante
@@ -608,5 +1097,242 @@ const morosidadHandler = async (_req, res) => {
 };
 router.get('/morosidad',         morosidadHandler);
 router.get('/reports/morosidad', morosidadHandler);
+
+// ── Fondos de Reserva ─────────────────────────────────────────
+
+// GET /condominium/funds/summary — saldo actual por provisión
+router.get('/funds/summary', async (_req, res) => {
+  const catalogRes = await query(
+    `SELECT * FROM provision_catalog ORDER BY sort_order, created_at`
+  );
+  const balancesRes = await query(
+    `SELECT provision_id, COALESCE(SUM(amount), 0)::float AS balance
+     FROM condo_fund_entries WHERE provision_id IS NOT NULL
+     GROUP BY provision_id`
+  );
+  const balanceMap = {};
+  for (const r of balancesRes.rows) balanceMap[r.provision_id] = parseFloat(r.balance);
+
+  const recentRes = await query(
+    `SELECT fe.*, pc.name AS provision_name
+     FROM (
+       SELECT *, ROW_NUMBER() OVER (PARTITION BY provision_id ORDER BY entry_date DESC, created_at DESC) AS rn
+       FROM condo_fund_entries WHERE provision_id IS NOT NULL
+     ) fe
+     LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+     WHERE fe.rn <= 5 ORDER BY fe.provision_id, fe.entry_date DESC`
+  );
+
+  const result = {};
+  for (const p of catalogRes.rows) {
+    result[p.id] = {
+      id: p.id, name: p.name, is_active: p.is_active,
+      balance: balanceMap[p.id] || 0,
+      last_entries: recentRes.rows.filter(r => r.provision_id === p.id),
+    };
+  }
+  success(res, result);
+});
+
+// GET /condominium/fund-entries — historial paginado del libro auxiliar
+router.get('/fund-entries', async (req, res) => {
+  const { provision_id, limit = 100, offset = 0 } = req.query;
+
+  // Calcular running balance en orden cronológico
+  const allRes = await query(
+    `SELECT id, provision_id, amount FROM condo_fund_entries
+     ${provision_id ? 'WHERE provision_id = $1' : ''}
+     ORDER BY entry_date ASC, created_at ASC`,
+    provision_id ? [provision_id] : []
+  );
+  const cumMap = {};
+  let running = 0;
+  for (const r of allRes.rows) {
+    running += parseFloat(r.amount);
+    cumMap[r.id] = Math.round(running * 100) / 100;
+  }
+
+  const params = provision_id
+    ? [provision_id, parseInt(limit), parseInt(offset)]
+    : [parseInt(limit), parseInt(offset)];
+  const { rows } = await query(
+    `SELECT fe.*, u.email AS registered_by_email, pc.name AS provision_name
+     FROM condo_fund_entries fe
+     LEFT JOIN users u ON u.id = fe.registered_by
+     LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+     ${provision_id ? 'WHERE fe.provision_id = $1' : ''}
+     ORDER BY fe.entry_date DESC, fe.created_at DESC
+     LIMIT $${provision_id ? 2 : 1} OFFSET $${provision_id ? 3 : 2}`,
+    params
+  );
+
+  success(res, rows.map(r => ({ ...r, running_balance: cumMap[r.id] ?? null })));
+});
+
+// POST /condominium/fund-entries — registrar egreso / ajuste / reversión
+router.post('/fund-entries', authorize('ADMIN'), async (req, res) => {
+  const data = z.object({
+    provision_id: z.string(),
+    amount:       z.number().positive(),
+    entry_type:   z.enum(['EXPENDITURE', 'WRITE_OFF', 'ADJUSTMENT', 'REVERSAL']),
+    description:  z.string().min(3),
+    entry_date:   z.string().optional(),
+    is_negative:  z.boolean().default(true),
+  }).parse(req.body);
+
+  const provRes = await query('SELECT id FROM provision_catalog WHERE id = $1', [data.provision_id]);
+  if (!provRes.rows.length) throw new AppError('Provisión no encontrada', 404);
+
+  let amount = data.amount;
+  if (['EXPENDITURE', 'WRITE_OFF'].includes(data.entry_type)) amount = -data.amount;
+  else if (data.entry_type === 'ADJUSTMENT' && data.is_negative) amount = -data.amount;
+
+  const { rows } = await query(
+    `INSERT INTO condo_fund_entries
+       (id, fund_type, provision_id, amount, entry_type, description, entry_date, registered_by)
+     VALUES ($1,'PROVISION',$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [newId(), data.provision_id, amount, data.entry_type,
+     data.description, data.entry_date || null, req.user.id]
+  );
+  success(res, rows[0], 201);
+});
+
+// ── Libro de Ingresos y Egresos ───────────────────────────────
+
+// GET /condominium/reports/balance
+router.get('/reports/balance', async (req, res) => {
+  const { year, month_from, month_to } = req.query;
+
+  const conditions = [];
+  const params = [];
+  if (year)       { params.push(parseInt(year));       conditions.push(`cep.year = $${params.length}`); }
+  if (month_from) { params.push(parseInt(month_from)); conditions.push(`cep.month >= $${params.length}`); }
+  if (month_to)   { params.push(parseInt(month_to));   conditions.push(`cep.month <= $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const periodsRes = await query(
+    `SELECT cep.*,
+            COUNT(ap.id)::int AS total_payments,
+            SUM(CASE WHEN ap.status = 'PAID' THEN 1 ELSE 0 END)::int AS paid_count,
+            COALESCE(SUM(CASE WHEN ap.status = 'PAID' THEN ap.paid_amount ELSE 0 END), 0) AS total_collected,
+            COALESCE(SUM(ap.aliquot_amount + ap.mora_at_billing), 0) AS total_billed
+     FROM condo_expense_periods cep
+     LEFT JOIN aliquot_payments ap ON ap.period_id = cep.id
+     ${where}
+     GROUP BY cep.id
+     ORDER BY cep.year ASC, cep.month ASC`,
+    params
+  );
+
+  const periodIds = periodsRes.rows.map(p => p.id);
+  let expenseItems = [], periodFundEntries = [];
+  if (periodIds.length > 0) {
+    const [itemsRes, fundRes] = await Promise.all([
+      query(`SELECT * FROM condo_period_expense_items WHERE period_id = ANY($1) ORDER BY created_at`, [periodIds]),
+      query(`SELECT fe.*, pc.name AS provision_name
+             FROM condo_fund_entries fe
+             LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+             WHERE fe.period_id = ANY($1) ORDER BY fe.entry_date ASC`, [periodIds]),
+    ]);
+    expenseItems       = itemsRes.rows;
+    periodFundEntries  = fundRes.rows;
+  }
+
+  const fundsRes = await query(
+    `SELECT pc.id, pc.name, COALESCE(SUM(fe.amount), 0)::float AS balance
+     FROM provision_catalog pc
+     LEFT JOIN condo_fund_entries fe ON fe.provision_id = pc.id
+     GROUP BY pc.id, pc.name ORDER BY pc.sort_order`
+  );
+  const fundBalances = {};
+  for (const r of fundsRes.rows) fundBalances[r.id] = { name: r.name, balance: parseFloat(r.balance) };
+
+  let cumulative = 0;
+  const rows = periodsRes.rows.map(period => {
+    const items     = expenseItems.filter(i => i.period_id === period.id);
+    const fundMoves = periodFundEntries.filter(e => e.period_id === period.id && e.entry_type !== 'PROVISION');
+
+    const total_billed       = parseFloat(period.total_billed) || 0;
+    const total_collected    = parseFloat(period.total_collected) || 0;
+    const total_expenses     = parseFloat(period.total_expenses) || 0;
+    const total_provisions   = parseFloat(period.total_provisions) || 0;
+    const grand_total        = parseFloat(period.grand_total) > 0 ? parseFloat(period.grand_total) : total_expenses;
+    const balance = Math.round((total_collected - grand_total) * 100) / 100;
+    cumulative = Math.round((cumulative + balance) * 100) / 100;
+
+    // Provisiones de este período desde condo_fund_entries
+    const periodProvisions = periodFundEntries
+      .filter(e => e.period_id === period.id && e.entry_type === 'PROVISION')
+      .map(e => ({ provision_id: e.provision_id, name: e.provision_name || e.fund_type, amount: parseFloat(e.amount) }));
+
+    return {
+      period: { id: period.id, month: period.month, year: period.year, status: period.status, generated_at: period.generated_at },
+      ingresos: {
+        total_billed, total_collected,
+        total_payments: period.total_payments || 0,
+        paid_count: period.paid_count || 0,
+        collection_pct: total_billed > 0 ? Math.round(total_collected / total_billed * 100) : 0,
+      },
+      egresos: {
+        items: items.map(i => ({ name: i.name, category: i.category, expense_type: i.expense_type, amount: parseFloat(i.amount) })),
+        provisions: periodProvisions,
+        total_expenses, total_provisions, grand_total,
+      },
+      fund_moves: fundMoves,
+      balance,
+      cumulative,
+    };
+  });
+
+  const summary = rows.reduce((acc, r) => ({
+    total_billed:     acc.total_billed     + r.ingresos.total_billed,
+    total_collected:  acc.total_collected  + r.ingresos.total_collected,
+    total_expenses:   acc.total_expenses   + r.egresos.total_expenses,
+    total_provisions: acc.total_provisions + r.egresos.total_provisions,
+    grand_total:      acc.grand_total      + r.egresos.grand_total,
+    net_result:       acc.net_result       + r.balance,
+  }), { total_billed: 0, total_collected: 0, total_expenses: 0, total_provisions: 0, grand_total: 0, net_result: 0 });
+
+  success(res, { rows, summary, funds: fundBalances });
+});
+
+// GET /condominium/reports/balance/pdf
+router.get('/reports/balance/pdf', async (req, res) => {
+  const { year, month_from, month_to } = req.query;
+
+  // Reutilizar la misma lógica del balance
+  const conditions = [];
+  const params = [];
+  if (year)       { params.push(parseInt(year));       conditions.push(`cep.year = $${params.length}`); }
+  if (month_from) { params.push(parseInt(month_from)); conditions.push(`cep.month >= $${params.length}`); }
+  if (month_to)   { params.push(parseInt(month_to));   conditions.push(`cep.month <= $${params.length}`); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const periodsRes = await query(
+    `SELECT cep.*,
+            COALESCE(SUM(CASE WHEN ap.status = 'PAID' THEN ap.paid_amount ELSE 0 END), 0) AS total_collected,
+            COALESCE(SUM(ap.aliquot_amount + ap.mora_at_billing), 0) AS total_billed
+     FROM condo_expense_periods cep
+     LEFT JOIN aliquot_payments ap ON ap.period_id = cep.id
+     ${where}
+     GROUP BY cep.id
+     ORDER BY cep.year ASC, cep.month ASC`,
+    params
+  );
+
+  const fundsRes = await query(
+    `SELECT fund_type, COALESCE(SUM(amount), 0)::float AS balance FROM condo_fund_entries GROUP BY fund_type`
+  );
+  const fundBalances = {};
+  for (const r of fundsRes.rows) fundBalances[r.fund_type] = parseFloat(r.balance);
+
+  const cfgRes = await query('SELECT name FROM condo_config LIMIT 1');
+  const condoName = cfgRes.rows[0]?.name || 'Condominio';
+
+  const buf = await generateBalancePdf({ condoName, periods: periodsRes.rows, funds: fundBalances, year, month_from, month_to });
+  res.set('Content-Type', 'application/pdf');
+  res.set('Content-Disposition', `attachment; filename="balance-${year || 'todo'}.pdf"`);
+  res.send(buf);
+});
 
 module.exports = router;

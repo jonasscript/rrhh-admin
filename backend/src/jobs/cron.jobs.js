@@ -76,17 +76,21 @@ const startCronJobs = () => {
     console.log('[cron] Actualizando mora de propietarios...');
     try {
       // Obtener config de mora
-      const cfgRes = await query('SELECT mora_rate, mora_enabled FROM condo_config LIMIT 1');
+      const cfgRes = await query('SELECT mora_rate, mora_enabled, mora_grace_days FROM condo_config LIMIT 1');
       const cfg    = cfgRes.rows[0];
       if (!cfg || !cfg.mora_enabled) return;
 
-      // Propietarios con saldo vencido
+      const graceDays = parseInt(cfg.mora_grace_days ?? 5, 10);
+
+      // Propietarios con saldo vencido cuyo período cerró hace más de mora_grace_days
       const { rows: overdue } = await query(
         `SELECT ap.owner_id, SUM(ap.aliquot_amount + ap.mora_at_billing - ap.paid_amount) AS pending
          FROM aliquot_payments ap
          JOIN condo_expense_periods cep ON cep.id = ap.period_id
          WHERE ap.status = 'OVERDUE' AND cep.status = 'CLOSED'
-         GROUP BY ap.owner_id`
+           AND NOW() > cep.closed_at + ($1 * INTERVAL '1 day')
+         GROUP BY ap.owner_id`,
+        [graceDays]
       );
 
       for (const row of overdue) {

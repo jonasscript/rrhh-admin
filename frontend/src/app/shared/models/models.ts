@@ -82,28 +82,164 @@ export interface Announcement {
 }
 
 // ── Condominium ──────────────────────────────────────────────
-export interface CondoConfig { id: string; condoName: string; address?: string; fixedExpenses: number; adminEmail: string; }
+export interface CondoConfig {
+  id: string;
+  name: string;
+  admin_email?: string;
+  fixed_maintenance: number;
+  fixed_security: number;
+  fixed_cleaning: number;
+  fixed_other: number;
+  mora_enabled: boolean;
+  mora_rate: number;
+  mora_grace_days: number;
+  capital_reserve_pct:  number;
+  capital_reserve_type: 'PERCENTAGE' | 'FIXED';
+  bad_debt_pct:         number;
+  bad_debt_type:        'PERCENTAGE' | 'FIXED';
+  created_at?: string;
+  updated_at?: string;
+}
 export interface CondoOwner {
   id: string; fullName: string; apartmentNumber: string; email: string; phone?: string;
   participationPct: number; moraAmount: number; isActive: boolean; createdAt: string;
 }
 export interface CondoExpensePeriod {
   id: string; month: number; year: number;
-  fixedExpenses: number; variableExpenses: number; totalExpenses: number;
-  variableNotes?: string; status: PeriodStatus;
-  createdAt: string; closedAt?: string;
-  aliquotPayments?: AliquotPayment[];
-  _count?: { aliquotPayments: number };
+  fixed_maintenance: number; fixed_security: number; fixed_cleaning: number; fixed_other: number;
+  variable_expenses: number; variable_notes?: string;
+  total_expenses: number;
+  capital_reserve: number;
+  bad_debt_provision: number;
+  total_provisions: number;
+  grand_total: number;
+  status: PeriodStatus; notes?: string;
+  generated_at?: string; closed_at?: string;
+  created_at: string; updated_at: string;
+  total_payments?: number; paid_count?: number; total_collected?: number;
+  payments?: AliquotPayment[];
 }
 
 export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE';
+
+export interface PaymentExtra {
+  id: string;
+  paymentId: string;
+  amount: number;
+  notes: string;
+  createdAt: string;
+}
+
 export interface AliquotPayment {
   id: string; periodId: string; ownerId: string;
-  aliquotAmount: number; moraAtBilling: number; totalDue: number;
-  amountPaid: number; paymentDate?: string; paymentMonth?: string;
+  aliquotAmount: number; moraAtBilling: number;
+  extrasTotal: number;
+  totalDue: number;
+  amountPaid: number; paymentDate?: string;
   proofUrl?: string; proofPublicId?: string;
   status: PaymentStatus; notes?: string;
   createdAt: string; updatedAt: string;
   owner?: CondoOwner;
   period?: CondoExpensePeriod;
+  extras: PaymentExtra[];
+}
+
+// ── Condominium Expense Items ────────────────────────────────
+export type ExpenseCategory = 'MAINTENANCE' | 'SECURITY' | 'CLEANING' | 'UTILITIES' | 'ADMINISTRATION' | 'OTHER';
+export type ExpenseType = 'FIXED' | 'VARIABLE';
+
+export interface CondoExpenseItem {
+  id: string;
+  name: string;
+  description?: string;
+  category: ExpenseCategory;
+  expenseType: ExpenseType;
+  amount: number;
+  isActive: boolean;
+  isRecurring: boolean;
+  displayOrder: number;
+  createdAt: string;
+}
+
+export interface CondoExpenseItemsResponse {
+  items: CondoExpenseItem[];
+  totalFixed: number;
+  totalVariable: number;
+  total: number;
+}
+
+export interface CondoPeriodExpenseItem {
+  id: string;
+  expenseItemId?: string;
+  name: string;
+  category: ExpenseCategory;
+  expenseType: ExpenseType;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+}
+
+// ── Fondos de Reserva ────────────────────────────────────────────────
+export type FundEntryType = 'PROVISION' | 'EXPENDITURE' | 'WRITE_OFF' | 'ADJUSTMENT' | 'REVERSAL';
+
+export interface ProvisionCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  calc_type: 'PERCENTAGE' | 'FIXED' | 'VARIABLE';
+  value: number;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CondoFundEntry {
+  id: string;
+  fund_type: string;
+  provision_id?: string;
+  provision_name?: string;
+  amount: number;
+  entry_type: FundEntryType;
+  period_id?: string;
+  description: string;
+  entry_date: string;
+  registered_by?: string;
+  registered_by_email?: string;
+  running_balance?: number;
+  created_at: string;
+}
+
+export interface CondoFundFacet {
+  id: string;
+  name: string;
+  is_active: boolean;
+  balance: number;
+  last_entries: CondoFundEntry[];
+}
+export type CondoFundSummary = Record<string, CondoFundFacet>;
+
+// ── Libro de Ingresos y Egresos ──────────────────────────────────
+export interface BalancePeriodIngresos {
+  total_billed: number; total_collected: number;
+  total_payments: number; paid_count: number; collection_pct: number;
+}
+export interface BalancePeriodEgresos {
+  items: { name: string; category: string; expense_type: string; amount: number }[];
+  provisions: { provision_id?: string; name: string; amount: number }[];
+  total_expenses: number; total_provisions: number; grand_total: number;
+}
+export interface BalancePeriodRow {
+  period: { id: string; month: number; year: number; status: string; generated_at?: string };
+  ingresos: BalancePeriodIngresos;
+  egresos: BalancePeriodEgresos;
+  fund_moves: CondoFundEntry[];
+  balance: number;
+  cumulative: number;
+}
+export interface BalanceReport {
+  rows: BalancePeriodRow[];
+  summary: { total_billed: number; total_collected: number; total_expenses: number;
+             total_provisions: number; grand_total: number; net_result: number; };
+  funds: Record<string, { name: string; balance: number }>;
 }

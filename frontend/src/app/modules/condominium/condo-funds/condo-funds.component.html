@@ -1,0 +1,138 @@
+<p-toast />
+
+<div class="page">
+  <div class="page-header">
+    <h2 class="page-title">Fondos de Reserva</h2>
+    <p class="page-subtitle">Libro auxiliar de provisiones financieras del condominio</p>
+  </div>
+
+  <!-- Summary cards (dynamic per provision) -->
+  <div class="funds-grid">
+    @if (loadingSummary) {
+      <div class="fund-card-skeleton">Cargando fondos…</div>
+    } @else {
+      @for (prov of catalog; track prov.id) {
+        <p-card styleClass="fund-card">
+          <div class="fund-card-content">
+            <div class="fund-info">
+              <span class="fund-label">{{ prov.name }}</span>
+              <span class="fund-balance">
+                {{ (getFacet(prov.id)?.balance ?? 0) | currency:'USD':'symbol':'1.2-2' }}
+              </span>
+              <span class="fund-hint">
+                @if (prov.calc_type === 'PERCENTAGE') { {{ prov.value }}% sobre gastos del período }
+                @else { Monto fijo ${{ prov.value | number:'1.2-2' }} por período }
+              </span>
+            </div>
+            @if (prov.is_active) {
+              <button pButton icon="pi pi-plus" label="Registrar movimiento"
+                [outlined]="true" (click)="openDialog(prov.id)"></button>
+            }
+          </div>
+        </p-card>
+      }
+    }
+  </div>
+
+  <!-- Ledger tabs (one per provision) -->
+  @if (!loadingSummary && catalog.length > 0) {
+    <p-tabView (activeIndexChange)="onTabChange($event)">
+      @for (prov of catalog; track prov.id) {
+        <p-tabPanel [header]="prov.name">
+          <p-table [value]="entriesMap[prov.id] ?? []" [loading]="loadingEntries[prov.id]"
+            [paginator]="true" [rows]="20" [showCurrentPageReport]="true"
+            currentPageReportTemplate="{first}-{last} de {totalRecords}" styleClass="p-datatable-sm">
+            <ng-template pTemplate="header">
+              <tr>
+                <th style="width:110px">Fecha</th>
+                <th style="width:140px">Tipo</th>
+                <th>Descripción</th>
+                <th style="width:130px;text-align:right">Monto</th>
+                <th style="width:140px;text-align:right">Saldo acumulado</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-e>
+              <tr>
+                <td>{{ e.entry_date | date:'dd/MM/yyyy' }}</td>
+                <td><p-tag [value]="entryTypeLabel(e.entry_type)" [severity]="entryTypeSeverity(e.entry_type)" /></td>
+                <td>{{ e.description }}</td>
+                <td [class]="e.amount >= 0 ? 'text-right text-green-600' : 'text-right text-red-500'">
+                  {{ e.amount | currency:'USD':'symbol':'1.2-2' }}
+                </td>
+                <td class="text-right"><strong>{{ e.running_balance | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="emptymessage">
+              <tr><td colspan="5" class="text-center p-3 text-color-secondary">Sin movimientos registrados</td></tr>
+            </ng-template>
+          </p-table>
+        </p-tabPanel>
+      }
+    </p-tabView>
+  }
+
+  @if (!loadingSummary && catalog.length === 0) {
+    <p class="text-color-secondary text-center mt-4">
+      No hay provisiones configuradas. Agrégalas desde <strong>Configuración → Provisiones</strong>.
+    </p>
+  }
+</div>
+
+<!-- Register movement dialog -->
+<p-dialog [(visible)]="showDialog"
+  [header]="'Registrar movimiento — ' + dialogProvName"
+  [modal]="true" [style]="{width:'440px'}" [closable]="!saving">
+
+  <div class="dialog-form">
+    <div class="field">
+      <label>Tipo de movimiento *</label>
+      <p-dropdown [(ngModel)]="entryType" [options]="entryTypeOptions"
+        optionLabel="label" optionValue="value" styleClass="w-full">
+        <ng-template pTemplate="selectedItem" let-item>
+          {{ item?.label }}
+        </ng-template>
+        <ng-template pTemplate="item" let-item>
+          <div><strong>{{ item.label }}</strong><br><small class="text-color-secondary">{{ item.hint }}</small></div>
+        </ng-template>
+      </p-dropdown>
+    </div>
+
+    <div class="field">
+      <label>Descripción *</label>
+      <input pInputText [(ngModel)]="entryDescription" class="w-full"
+        placeholder="Ej: Pago reparación bomba de agua" />
+    </div>
+
+    <div class="field">
+      <label>Monto (USD) *</label>
+      <p-inputNumber [(ngModel)]="entryAmount" [min]="0.01" [minFractionDigits]="2"
+        prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+    </div>
+
+    @if (isAdjustment) {
+      <div class="field">
+        <label>Dirección del ajuste</label>
+        <div class="adj-toggle">
+          <button pButton [outlined]="!isNegative" [label]="'+ Ingreso al fondo'"
+            (click)="isNegative = false" class="flex-1"></button>
+          <button pButton [outlined]="isNegative" [label]="'- Salida del fondo'"
+            severity="danger" (click)="isNegative = true" class="flex-1"></button>
+        </div>
+      </div>
+    }
+
+    <div class="field">
+      <label>Fecha</label>
+      <p-calendar [(ngModel)]="entryDate" dateFormat="dd/mm/yy"
+        [showIcon]="true" styleClass="w-full" />
+    </div>
+  </div>
+
+  <ng-template pTemplate="footer">
+    <button pButton label="Cancelar" [outlined]="true" (click)="showDialog=false" [disabled]="saving"></button>
+    <button pButton label="Registrar" icon="pi pi-check"
+      [loading]="saving"
+      [disabled]="!entryDescription.trim() || entryAmount <= 0"
+      (click)="save()"></button>
+  </ng-template>
+</p-dialog>

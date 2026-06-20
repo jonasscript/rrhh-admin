@@ -2,6 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -14,9 +15,10 @@ import { ToastModule } from 'primeng/toast';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { FileUploadModule } from 'primeng/fileupload';
 import { ImageModule } from 'primeng/image';
+import { InputTextareaModule } from 'primeng/inputtextarea';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { CondominiumService } from '../../../shared/models/condominium.service';
-import { AliquotPayment, CondoExpensePeriod, PaymentStatus } from '../../../shared/models/models';
+import { AliquotPayment, CondoExpensePeriod, CondoPeriodExpenseItem, PaymentExtra, PaymentStatus } from '../../../shared/models/models';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | 'danger' | undefined;
@@ -27,7 +29,7 @@ type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | '
   imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule,
     TableModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule,
     CalendarModule, TagModule, TooltipModule, ToastModule, ConfirmDialogModule,
-    FileUploadModule, ImageModule],
+    FileUploadModule, ImageModule, InputTextareaModule],
   providers: [MessageService, ConfirmationService],
   templateUrl: './condo-period-detail.component.html',
   styleUrl: './condo-period-detail.component.css',
@@ -40,13 +42,24 @@ export class CondoPeriodDetailComponent implements OnInit {
   private confirm = inject(ConfirmationService);
 
   period: CondoExpensePeriod | null = null;
+  expenseItems: CondoPeriodExpenseItem[] = [];
   loading = false; generating = false; sending = false;
   saving = false; uploadingProof = false; deletingProof = false;
 
   showPaymentDialog = false;
-  showProofDialog = false;
+  showProofDialog   = false;
+  showExtraDialog   = false;
   selectedPayment: AliquotPayment | null = null;
   selectedFile: File | null = null;
+
+  // ── Extras ─────────────────────────────────────────────
+  savingExtra   = false;
+  deletingExtra: string | null = null;  // ID del extra que se está borrando
+  editingExtra:  PaymentExtra | null = null;
+  newExtraAmount = 0;
+  newExtraNotes  = '';
+  editExtraAmount = 0;
+  editExtraNotes  = '';
 
   paymentForm = this.fb.group({
     amountPaid: [null as number | null, [Validators.required, Validators.min(0.01)]],
@@ -56,6 +69,26 @@ export class CondoPeriodDetailComponent implements OnInit {
   });
 
   get monthName() { return this.period ? MONTHS[this.period.month - 1] : ''; }
+  get fixedSum(): number {
+    if (this.expenseItems.length > 0) {
+      return this.expenseItems
+        .filter(i => i.expenseType === 'FIXED')
+        .reduce((s, i) => s + i.amount, 0);
+    }
+    // Fallback for periods without stored expense items
+    if (!this.period) return 0;
+    return (this.period.fixed_maintenance || 0) + (this.period.fixed_security || 0) +
+           (this.period.fixed_cleaning    || 0) + (this.period.fixed_other    || 0);
+  }
+
+  get variableSum(): number {
+    if (this.expenseItems.length > 0) {
+      return this.expenseItems
+        .filter(i => i.expenseType === 'VARIABLE')
+        .reduce((s, i) => s + i.amount, 0);
+    }
+    return parseFloat(String(this.period?.variable_expenses || 0));
+  }
 
   ngOnInit() {
     this.route.params.subscribe(p => this.loadPeriod(p['id']));
@@ -63,8 +96,15 @@ export class CondoPeriodDetailComponent implements OnInit {
 
   loadPeriod(id: string) {
     this.loading = true;
-    this.svc.getPeriod(id).subscribe({
-      next: (p) => { this.period = p; this.loading = false; },
+    forkJoin({
+      period:       this.svc.getPeriod(id),
+      expenseItems: this.svc.getPeriodExpenseItems(id),
+    }).subscribe({
+      next: ({ period, expenseItems }) => {
+        this.period       = period;
+        this.expenseItems = expenseItems;
+        this.loading      = false;
+      },
       error: () => this.loading = false,
     });
   }
@@ -72,8 +112,13 @@ export class CondoPeriodDetailComponent implements OnInit {
   generate() {
     if (!this.period) return;
     this.generating = true;
-    this.svc.generateAliquots(this.period.id).subscribe({
-      next: (p) => { this.period = p; this.generating = false; this.msg.add({ severity: 'success', summary: 'Alícuotas generadas', detail: '' }); },
+    const id = this.period.id;
+    this.svc.generateAliquots(id).subscribe({
+      next: () => {
+        this.generating = false;
+        this.msg.add({ severity: 'success', summary: 'Alícuotas generadas' });
+        this.loadPeriod(id);
+      },
       error: (err) => { this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message }); this.generating = false; },
     });
   }
@@ -183,6 +228,78 @@ export class CondoPeriodDetailComponent implements OnInit {
         this.loadPeriod(this.period!.id);
       },
       error: () => this.deletingProof = false,
+    });
+  }
+
+  // ── Extra charge ─────────────────────────────────────────
+  openExtraDialog(payment: AliquotPayment) {
+    this.selectedPayment  = payment;
+    this.editingExtra     = null;
+    this.newExtraAmount   = 0;
+    this.newExtraNotes    = '';
+    this.showExtraDialog  = true;
+  }
+
+  addExtra() {
+    if (!this.selectedPayment || this.newExtraAmount <= 0 || !this.newExtraNotes.trim()) return;
+    this.savingExtra = true;
+    this.svc.addPaymentExtra(this.selectedPayment.id, this.newExtraAmount, this.newExtraNotes.trim()).subscribe({
+      next: () => {
+        this.msg.add({ severity: 'success', summary: 'Cargo extra agregado' });
+        this.newExtraAmount = 0; this.newExtraNotes = '';
+        this.savingExtra = false;
+        this.loadPeriod(this.period!.id);
+      },
+      error: (err) => {
+        this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message });
+        this.savingExtra = false;
+      },
+    });
+  }
+
+  startEditExtra(extra: PaymentExtra) {
+    this.editingExtra     = extra;
+    this.editExtraAmount  = extra.amount;
+    this.editExtraNotes   = extra.notes;
+  }
+
+  cancelEditExtra() { this.editingExtra = null; }
+
+  saveEditExtra() {
+    if (!this.editingExtra || this.editExtraAmount <= 0 || !this.editExtraNotes.trim()) return;
+    this.savingExtra = true;
+    this.svc.updatePaymentExtra(this.editingExtra.id, this.editExtraAmount, this.editExtraNotes.trim()).subscribe({
+      next: () => {
+        this.msg.add({ severity: 'success', summary: 'Cargo extra actualizado' });
+        this.editingExtra = null; this.savingExtra = false;
+        this.loadPeriod(this.period!.id);
+      },
+      error: (err) => {
+        this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message });
+        this.savingExtra = false;
+      },
+    });
+  }
+
+  deleteExtra(extra: PaymentExtra) {
+    this.deletingExtra = extra.id;
+    this.svc.deletePaymentExtra(extra.id).subscribe({
+      next: () => {
+        this.msg.add({ severity: 'info', summary: 'Cargo extra eliminado' });
+        this.deletingExtra = null;
+        // Actualizar en memoria para evitar reload completo
+        if (this.selectedPayment) {
+          this.selectedPayment = {
+            ...this.selectedPayment,
+            extras: this.selectedPayment.extras.filter(e => e.id !== extra.id),
+          };
+          this.loadPeriod(this.period!.id);
+        }
+      },
+      error: (err) => {
+        this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message });
+        this.deletingExtra = null;
+      },
     });
   }
 

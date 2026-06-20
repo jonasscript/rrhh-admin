@@ -359,12 +359,14 @@ const updateDetail = async (req, res) => {
     `UPDATE payroll_details SET
        overtime_supp_hours = $1, overtime_extr_hours = $2, overtime_pay = $3,
        decimo_tercero = $4, decimo_cuarto = $5, fondos_reserva = $6, fondos_payout_mode = $7,
-       other_discounts = $8, gross_pay = $9, net_pay = $10, notes = $11
-     WHERE period_id = $12 AND employee_id = $13
+       iess_employee = $8, iess_employer = $9, loan_discount = $10, iess_loans = $11,
+       other_discounts = $12, gross_pay = $13, net_pay = $14, notes = $15
+     WHERE period_id = $16 AND employee_id = $17
      RETURNING *`,
     [
       detail.overtimeSuppHours, detail.overtimeExtrHours, detail.overtimePay,
       detail.decimoTercero, detail.decimoCuarto, detail.fondosReserva, detail.fondosPayoutMode,
+      detail.iessEmployee, detail.iessEmployer, detail.loanDiscount, detail.iessLoansDiscount,
       detail.otherDiscounts, detail.grossPay, detail.netPay,
       data.notes || null, periodId, employeeId,
     ]

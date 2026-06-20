@@ -19,6 +19,9 @@ const errorMiddleware = (err, _req, res, _next) => {
   if (err.code === '23503') {
     return res.status(409).json({ success: false, message: 'Referencia inválida', detail: err.detail });
   }
+  if (err.code === '23514') {
+    return res.status(400).json({ success: false, message: 'Valor no permitido por restricción de base de datos', detail: err.detail });
+  }
 
   const statusCode = err.statusCode || 500;
   const message    = err.isOperational ? err.message : 'Error interno del servidor';

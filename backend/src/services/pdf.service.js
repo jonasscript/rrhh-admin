@@ -152,4 +152,82 @@ const totalRow = (doc, label, value) => {
   doc.font('Helvetica');
 };
 
-module.exports = { generatePayrollPdf, generateAliquotPdf };
+/**
+ * Genera un PDF del Libro de Ingresos y Egresos (Balance General).
+ * @param {object} opts — { condoName, periods, funds, year, month_from, month_to }
+ * @returns {Promise<Buffer>}
+ */
+const generateBalancePdf = ({ condoName, periods, funds, year, month_from, month_to }) =>
+  new Promise((resolve, reject) => {
+    const doc    = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+
+    doc.on('data',  (c) => chunks.push(c));
+    doc.on('end',   ()  => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const periodLabel = year
+      ? (month_from && month_to
+          ? `${MONTHS_ES[+month_from]}–${MONTHS_ES[+month_to]} ${year}`
+          : `Año ${year}`)
+      : 'Todos los períodos';
+
+    // Encabezado
+    doc.fontSize(16).fillColor('#1e40af').text('LIBRO DE INGRESOS Y EGRESOS', { align: 'center' });
+    doc.fontSize(11).fillColor('#334155').text(condoName, { align: 'center' });
+    doc.fontSize(10).fillColor('#64748b').text(periodLabel, { align: 'center' });
+    doc.moveDown();
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#94a3b8');
+    doc.moveDown(0.5);
+
+    // Tabla de períodos
+    let cumulative = 0;
+    for (const p of periods) {
+      const total_billed    = parseFloat(p.total_billed) || 0;
+      const total_collected = parseFloat(p.total_collected) || 0;
+      const total_expenses  = parseFloat(p.total_expenses) || 0;
+      const total_provisions= parseFloat(p.total_provisions) || 0;
+      const grand_total     = parseFloat(p.grand_total) > 0 ? parseFloat(p.grand_total) : total_expenses;
+      const balance         = Math.round((total_collected - grand_total) * 100) / 100;
+      cumulative           += balance;
+
+      const periodName = `${MONTHS_ES[p.month]} ${p.year}`;
+      doc.fontSize(10).fillColor('#1e3a5f').font('Helvetica-Bold').text(periodName);
+      doc.font('Helvetica');
+      row(doc, 'Total facturado',    fmt(total_billed));
+      row(doc, 'Total cobrado',      fmt(total_collected));
+      row(doc, 'Gastos operativos',  fmt(total_expenses));
+      if (total_provisions > 0) {
+        row(doc, `Provisiones (${parseFloat(p.capital_reserve)||0 > 0 ? 'FC+' : ''}${parseFloat(p.bad_debt_provision)||0 > 0 ? 'PI' : ''})`,
+            fmt(total_provisions));
+      }
+      row(doc, 'Total egresos',      fmt(grand_total));
+      doc.fontSize(10).fillColor(balance >= 0 ? '#16a34a' : '#dc2626');
+      row(doc, `Resultado — acumulado ${fmt(cumulative)}`, `${balance >= 0 ? '+' : ''}${fmt(balance)}`);
+      doc.fillColor('#1e293b');
+      doc.moveDown(0.3);
+      doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke('#e2e8f0');
+      doc.moveDown(0.3);
+
+      if (doc.y > 720) { doc.addPage(); }
+    }
+
+    // Estado de fondos
+    doc.moveDown();
+    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#94a3b8');
+    doc.moveDown(0.5);
+    doc.fontSize(11).fillColor('#1e40af').text('ESTADO DE FONDOS DE RESERVA');
+    doc.font('Helvetica').fontSize(10).fillColor('#1e293b');
+    doc.moveDown(0.3);
+    row(doc, 'Fondo de Capital',              fmt(funds['CAPITAL_RESERVE'] || 0));
+    row(doc, 'Provisión Alícuotas Incobrables', fmt(funds['BAD_DEBT'] || 0));
+
+    // Pie
+    doc.moveDown(2);
+    doc.fontSize(8).fillColor('#94a3b8')
+       .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, { align: 'right' });
+
+    doc.end();
+  });
+
+module.exports = { generatePayrollPdf, generateAliquotPdf, generateBalancePdf };

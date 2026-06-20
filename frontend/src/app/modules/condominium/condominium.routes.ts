@@ -10,6 +10,10 @@ export const CONDOMINIUM_ROUTES: Routes = [
     loadComponent: () => import('./condo-owners/condo-owners.component').then(m => m.CondoOwnersComponent),
   },
   {
+    path: 'expenses',
+    loadComponent: () => import('./condo-expenses/condo-expenses.component').then(m => m.CondoExpensesComponent),
+  },
+  {
     path: 'periods',
     loadComponent: () => import('./condo-periods/condo-periods.component').then(m => m.CondoPeriodsComponent),
   },
@@ -24,5 +28,17 @@ export const CONDOMINIUM_ROUTES: Routes = [
   {
     path: 'config',
     loadComponent: () => import('./condo-config/condo-config.component').then(m => m.CondoConfigComponent),
+  },
+  {
+    path: 'funds',
+    loadComponent: () => import('./condo-funds/condo-funds.component').then(m => m.CondoFundsComponent),
+  },
+  {
+    path: 'provisions',
+    loadComponent: () => import('./condo-provisions/condo-provisions.component').then(m => m.CondoProvisionsComponent),
+  },
+  {
+    path: 'reports',
+    loadComponent: () => import('./condo-reports/condo-reports.component').then(m => m.CondoReportsComponent),
   },
 ];
