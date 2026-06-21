@@ -45,7 +45,7 @@
         <span class="fraction-badge">{{ fractionLabel(rec) }}</span>
       </td>
       <td class="text-right font-bold text-green-700">
-        {{ rec.amount | currency:'USD':'symbol':'1.2-2' }}
+        {{ rec.amount | currency:'USD':'symbol-narrow':'1.2-2' }}
       </td>
       <td class="text-muted text-sm">
         {{ rec.created_at | date:'dd/MM/yyyy' }}

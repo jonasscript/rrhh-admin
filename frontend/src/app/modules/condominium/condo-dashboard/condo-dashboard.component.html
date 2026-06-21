@@ -1,55 +1,137 @@
 <div class="page">
-      <div class="page-header">
-        <h2>Condominio</h2>
-        <div class="header-actions">
-          <button pButton icon="pi pi-cog" label="Configurar" class="p-button-outlined p-button-sm" routerLink="config"></button>
-          <button pButton icon="pi pi-users" label="Co-propietarios" class="p-button-outlined p-button-sm" routerLink="owners"></button>
-          <button pButton icon="pi pi-list" label="Períodos" class="p-button-sm" routerLink="periods"></button>
+  <div class="page-header">
+    <div>
+      <h2>Condominio</h2>
+      <p>Vista rápida para saber qué necesita atención hoy.</p>
+    </div>
+    @if (!loading && latestPeriod) {
+      <p-tag
+        [value]="periodLabel(latestPeriod)"
+        [severity]="periodStatusSeverity(latestPeriod.status)" />
+    }
+  </div>
+
+  @if (loading) {
+    <div class="loading-state">Cargando métricas del condominio...</div>
+  } @else {
+    @if (hasError) {
+      <div class="empty-state">No se pudo cargar el resumen del condominio.</div>
+    } @else {
+      <section class="status-band">
+        <div>
+          <span class="eyebrow">Estado general</span>
+          <h3>{{ statusTitle }}</h3>
+          <p>{{ statusHint }}</p>
         </div>
+        <p-tag [value]="statusTitle" [severity]="statusSeverity" />
+      </section>
+
+      <div class="metrics-grid">
+        @for (metric of metrics; track metric.label) {
+          <p-card [styleClass]="'metric-card metric-card--' + metric.tone">
+            <div class="metric-content">
+              <span class="metric-icon"><i [class]="metric.icon"></i></span>
+              <div class="metric-body">
+                <span class="metric-label">{{ metric.label }}</span>
+                <strong class="metric-value">{{ metricValue(metric) }}</strong>
+                <span class="metric-hint">{{ metric.hint }}</span>
+              </div>
+            </div>
+          </p-card>
+        }
       </div>
 
-      <div class="grid">
-        <div class="col-12 md:col-4">
-          <p-card header="Gastos del Condominio">
-            <p class="text-color-secondary text-sm">Configura los ítems de gasto fijos y variables que se usan para calcular las alícuotas.</p>
-            <button pButton label="Gestionar gastos" icon="pi pi-wallet" severity="info" class="w-full mt-2" routerLink="expenses"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Reporte de Morosidad">
-            <p class="text-color-secondary text-sm">Visualiza los co-propietarios con pagos pendientes.</p>
-            <button pButton label="Ver morosidad" icon="pi pi-exclamation-triangle" severity="danger" class="w-full mt-2" routerLink="morosidad"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Co-propietarios">
-            <p class="text-color-secondary text-sm">Gestión de co-propietarios, %, mora y datos de contacto.</p>
-            <button pButton label="Gestionar" icon="pi pi-users" class="w-full mt-2 p-button-outlined" routerLink="owners"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Períodos de cobro">
-            <p class="text-color-secondary text-sm">Crear y gestionar períodos mensuales de alícuotas.</p>
-            <button pButton label="Períodos" icon="pi pi-calendar" class="w-full mt-2 p-button-outlined" routerLink="periods"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Provisiones Financieras">
-            <p class="text-color-secondary text-sm">Configura las provisiones (porcentaje, monto fijo o variable) que se aplican en cada período.</p>
-            <button pButton label="Gestionar provisiones" icon="pi pi-shield" severity="secondary" class="w-full mt-2 p-button-outlined" routerLink="provisions"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Fondos de Reserva">
-            <p class="text-color-secondary text-sm">Libro auxiliar de provisiones financieras: fondo de capital y provisión de incobrables.</p>
-            <button pButton label="Ver fondos" icon="pi pi-building" class="w-full mt-2 p-button-outlined" routerLink="funds"></button>
-          </p-card>
-        </div>
-        <div class="col-12 md:col-4">
-          <p-card header="Libro Financiero">
-            <p class="text-color-secondary text-sm">Libro de ingresos y egresos por período. Exporta balances para presentar a los propietarios.</p>
-            <button pButton label="Ver libro" icon="pi pi-chart-bar" severity="info" class="w-full mt-2" routerLink="reports"></button>
-          </p-card>
-        </div>
+      <div class="dashboard-grid">
+        <p-card styleClass="panel-card panel-card--main">
+          <ng-template pTemplate="header">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Cobranza</span>
+                <h3>Último período</h3>
+                <p>{{ latestPeriod ? periodLabel(latestPeriod) : 'Sin períodos generados' }}</p>
+              </div>
+              @if (latestPeriod) {
+                <p-tag
+                  [value]="periodStatusLabel(latestPeriod.status)"
+                  [severity]="periodStatusSeverity(latestPeriod.status)" />
+              }
+            </div>
+          </ng-template>
+
+          @if (latestPeriod) {
+            <div class="collection-summary">
+              <div class="collection-score">
+                <span class="section-label">Recaudación</span>
+                <strong>{{ latestCollectionPct }}%</strong>
+                <p-tag
+                  [value]="latestCollectionPct >= 90 ? 'Sano' : latestCollectionPct >= 60 ? 'En seguimiento' : 'Crítico'"
+                  [severity]="collectionSeverity(latestCollectionPct)" />
+              </div>
+
+              <div class="progress-track">
+                <div class="progress-fill" [style.width.%]="latestCollectionPct"></div>
+              </div>
+
+              <div class="period-stats">
+                <div>
+                  <span>Total a cubrir</span>
+                  <strong>{{ currency(latestBilled) }}</strong>
+                </div>
+                <div>
+                  <span>Cobrado</span>
+                  <strong>{{ currency(latestCollected) }}</strong>
+                </div>
+                <div>
+                  <span>Pendiente</span>
+                  <strong>{{ currency(latestPending) }}</strong>
+                </div>
+                <div>
+                  <span>Pagos completos</span>
+                  <strong>{{ paidPaymentsLabel }}</strong>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="empty-state">Aún no hay períodos registrados.</div>
+          }
+        </p-card>
+
+        <p-card styleClass="panel-card">
+          <ng-template pTemplate="header">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Prioridad</span>
+                <h3>Alertas</h3>
+                <p>Lo más importante para revisar primero.</p>
+              </div>
+            </div>
+          </ng-template>
+
+          <div class="alert-list">
+            <div class="alert-row" [class.alert-row--danger]="totalMora > 0">
+              <i class="pi pi-exclamation-circle"></i>
+              <div>
+                <strong>{{ morosos.length }} propietarios en mora</strong>
+                <span>{{ currency(totalMora) }} pendiente por recuperar</span>
+              </div>
+            </div>
+            <div class="alert-row" [class.alert-row--warning]="latestPeriod && latestCollectionPct < 90">
+              <i class="pi pi-chart-line"></i>
+              <div>
+                <strong>{{ latestCollectionPct }}% de recaudación</strong>
+                <span>{{ latestPeriod ? 'Del último período registrado' : 'Sin período para evaluar' }}</span>
+              </div>
+            </div>
+            <div class="alert-row" [class.alert-row--warning]="openPeriodsCount > 0">
+              <i class="pi pi-calendar-clock"></i>
+              <div>
+                <strong>{{ openPeriodsCount }} períodos abiertos</strong>
+                <span>Períodos no cerrados o aún en proceso</span>
+              </div>
+            </div>
+          </div>
+        </p-card>
       </div>
-    </div>
+    }
+  }
+</div>

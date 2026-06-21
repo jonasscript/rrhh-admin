@@ -103,6 +103,35 @@ export interface CondoConfig {
 export interface CondoOwner {
   id: string; fullName: string; apartmentNumber: string; email: string; phone?: string;
   participationPct: number; moraAmount: number; isActive: boolean; createdAt: string;
+  overduePeriods?: number;
+  debtPeriods?: CondoMoraPeriod[];
+  moraPayments?: MoraPaymentRecord[];
+}
+
+export interface CondoMoraPeriod {
+  periodId: string;
+  paymentId: string;
+  month: number;
+  year: number;
+  closedAt?: string;
+  aliquotAmount: number;
+  extrasTotal: number;
+  amountPaid: number;
+  pendingAmount: number;
+}
+
+export interface MoraPaymentRecord {
+  id: string;
+  ownerId?: string;
+  debtPaymentId?: string;
+  debtMonth?: number;
+  debtYear?: number;
+  amount: number;
+  paymentDate: string;
+  paymentType: 'ALIQUOT_EXCESS' | 'DIRECT';
+  proofUrl?: string;
+  notes?: string;
+  createdAt: string;
 }
 export interface CondoExpensePeriod {
   id: string; month: number; year: number;
@@ -137,11 +166,44 @@ export interface AliquotPayment {
   totalDue: number;
   amountPaid: number; paymentDate?: string;
   proofUrl?: string; proofPublicId?: string;
+  moraPaymentRecordIds?: string[];
   status: PaymentStatus; notes?: string;
   createdAt: string; updatedAt: string;
   owner?: CondoOwner;
   period?: CondoExpensePeriod;
   extras: PaymentExtra[];
+}
+
+export interface OcrExtractedData {
+  raw_text?: string;
+  payment_type?: string;
+  amount?: number | null;
+  currency?: string | null;
+  date?: string | null;
+  reference_number?: string | null;
+  origin_account?: string | null;
+  destination_account?: string | null;
+  bank?: string | null;
+  sender_name?: string | null;
+  receiver_name?: string | null;
+  confidence_score?: number | null;
+  matched_template?: string | null;
+}
+
+export interface OcrOwnerMatch {
+  paymentId: string;
+  paymentStatus: PaymentStatus;
+  aliquotAmount: number;
+  moraAtBilling: number;
+  amountPaid: number;
+  totalDue: number;
+  owner: Pick<CondoOwner, 'id' | 'fullName' | 'apartmentNumber'>;
+}
+
+export interface OcrScanResult {
+  filename: string;
+  extractedData: OcrExtractedData;
+  matches: OcrOwnerMatch[];
 }
 
 // ── Condominium Expense Items ────────────────────────────────

@@ -39,7 +39,7 @@
             Sin nómina generada — haz clic en "Ver" para generarla
           } @else {
             {{ op.employee_count }} empleados · Total neto:
-            {{ op.total_net | currency:'USD':'symbol':'1.2-2' }}
+            {{ op.total_net | currency:'USD':'symbol-narrow':'1.2-2' }}
           }
         </div>
       </div>
@@ -65,7 +65,7 @@
     <tr>
       <td class="font-medium">{{ monthLabel(p.month) }} {{ p.year }}</td>
       <td>{{ p.employee_count }}</td>
-      <td>{{ p.total_net | currency:'USD':'symbol':'1.2-2' }}</td>
+      <td>{{ p.total_net | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
       <td><span class="status-badge {{ p.status }}">{{ p.status }}</span></td>
       <td>
         <a [routerLink]="[p.id]">

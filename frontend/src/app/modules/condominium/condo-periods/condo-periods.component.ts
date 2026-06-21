@@ -2,7 +2,7 @@ import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { firstValueFrom, forkJoin } from 'rxjs';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -19,7 +19,7 @@ import { DividerModule } from 'primeng/divider';
 import { MessageService, ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { CondominiumService } from '../../../shared/models/condominium.service';
-import { CondoExpensePeriod, ExpenseCategory, ExpenseType, ProvisionCatalogItem } from '../../../shared/models/models';
+import { AliquotPayment, CondoExpensePeriod, ExpenseCategory, ExpenseType, OcrOwnerMatch, OcrScanResult, ProvisionCatalogItem } from '../../../shared/models/models';
 
 interface PeriodLineItem {
   expenseItemId: string | null;
@@ -30,6 +30,22 @@ interface PeriodLineItem {
   selected: boolean;
   isRecurring: boolean;
   isAdHoc: boolean;
+}
+
+type BulkReceiptStatus = 'queued' | 'scanning' | 'ready' | 'error' | 'confirming' | 'confirmed';
+interface BulkReceipt {
+  file: File;
+  status: BulkReceiptStatus;
+  scan?: OcrScanResult;
+  match?: OcrOwnerMatch;
+  amount?: number;
+  paymentDate?: string;
+  error?: string;
+  showManualAssignment?: boolean;
+  manualPeriodId?: string;
+  manualPeriod?: CondoExpensePeriod;
+  manualPaymentId?: string;
+  manualMatch?: OcrOwnerMatch;
 }
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -61,6 +77,15 @@ export class CondoPeriodsComponent implements OnInit {
   saving    = false;
   deleting  = false;
   showDialog = false;
+
+  // ── Carga masiva de comprobantes ─────────────────────────
+  showBulkUpload = false;
+  loadingBulkPeriod = false;
+  bulkProcessing = false;
+  bulkPeriod: CondoExpensePeriod | null = null;
+  bulkReceipts: BulkReceipt[] = [];
+  manualPeriods: CondoExpensePeriod[] = [];
+  loadingManualPeriods = false;
 
   // ── Dialog state ──────────────────────────────────────────
   selectedMonth = new Date().getMonth() + 1;
@@ -224,6 +249,189 @@ export class CondoPeriodsComponent implements OnInit {
   }
 
   goToExpenses() { this.router.navigate(['/condominium/expenses']); }
+
+  openBulkUpload(period: CondoExpensePeriod) {
+    this.loadingBulkPeriod = true;
+    this.svc.getPeriod(period.id).subscribe({
+      next: fullPeriod => {
+        this.loadingBulkPeriod = false;
+        if (!fullPeriod.payments?.length) {
+          this.msg.add({ severity: 'warn', summary: 'Sin alícuotas', detail: 'Primero genera las alícuotas de este período.' });
+          return;
+        }
+        if (fullPeriod.status === 'CLOSED') {
+          this.msg.add({ severity: 'warn', summary: 'Período cerrado', detail: 'No se pueden registrar más pagos.' });
+          return;
+        }
+        this.bulkPeriod = fullPeriod;
+        this.bulkReceipts = [];
+        this.showBulkUpload = true;
+      },
+      error: err => {
+        this.loadingBulkPeriod = false;
+        this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'No se pudo cargar el período.' });
+      },
+    });
+  }
+
+  onBulkFilesSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const files = Array.from(input.files || []);
+    if (!files.length || !this.bulkPeriod) return;
+
+    this.bulkReceipts.push(...files.map(file => ({ file, status: 'queued' as const })));
+    input.value = '';
+    void this.processBulkQueue();
+  }
+
+  private async processBulkQueue() {
+    if (this.bulkProcessing || !this.bulkPeriod) return;
+    this.bulkProcessing = true;
+    try {
+      for (const receipt of this.bulkReceipts) {
+        if (receipt.status !== 'queued') continue;
+        receipt.status = 'scanning';
+        try {
+          const scan = await firstValueFrom(this.svc.scanPaymentProof(receipt.file, this.bulkPeriod.id));
+          receipt.scan = scan;
+          receipt.match = scan.matches.length === 1 ? scan.matches[0] : undefined;
+          receipt.amount = this.readAmount(scan.extractedData.amount);
+          receipt.paymentDate = this.toIsoDate(scan.extractedData.date);
+          receipt.status = 'ready';
+        } catch (err: any) {
+          receipt.status = 'error';
+          receipt.error = err.error?.message || 'No se pudo leer el comprobante.';
+        }
+      }
+    } finally {
+      this.bulkProcessing = false;
+    }
+  }
+
+  private readAmount(value: unknown): number | undefined {
+    const amount = typeof value === 'number'
+      ? value
+      : Number(String(value ?? '').replace(/[$\s]/g, '').replace(',', '.'));
+    return Number.isFinite(amount) && amount > 0 ? amount : undefined;
+  }
+
+  private toIsoDate(value: unknown): string | undefined {
+    const date = String(value || '').trim();
+    const slash = date.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (slash) return `${slash[3]}-${slash[2].padStart(2, '0')}-${slash[1].padStart(2, '0')}`;
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined;
+  }
+
+  isReceiptDateInPeriod(receipt: BulkReceipt): boolean {
+    const period = receipt.manualPeriod || this.bulkPeriod;
+    return !!period && !!receipt.paymentDate &&
+      receipt.paymentDate.slice(0, 7) === `${period.year}-${String(period.month).padStart(2, '0')}`;
+  }
+
+  canConfirmReceipt(receipt: BulkReceipt): boolean {
+    const match = this.receiptMatch(receipt);
+    return !!match && match.paymentStatus !== 'PAID' &&
+      !!receipt.amount && this.isReceiptDateInPeriod(receipt) && receipt.status === 'ready';
+  }
+
+  receiptMatch(receipt: BulkReceipt): OcrOwnerMatch | undefined {
+    return receipt.manualMatch || receipt.match;
+  }
+
+  receiptTargetPeriod(receipt: BulkReceipt): CondoExpensePeriod | null {
+    return receipt.manualPeriod || this.bulkPeriod;
+  }
+
+  pendingAmount(receipt: BulkReceipt): number {
+    const match = this.receiptMatch(receipt);
+    return match ? Math.max(0, match.totalDue - match.amountPaid) : 0;
+  }
+
+  openManualAssignment(receipt: BulkReceipt) {
+    receipt.showManualAssignment = true;
+    if (receipt.status === 'error') receipt.status = 'ready';
+    if (this.manualPeriods.length || this.loadingManualPeriods) return;
+    this.loadingManualPeriods = true;
+    this.svc.getPeriods().subscribe({
+      next: periods => { this.manualPeriods = periods.filter(p => p.status !== 'CLOSED'); this.loadingManualPeriods = false; },
+      error: () => {
+        this.loadingManualPeriods = false;
+        receipt.error = 'No se pudieron cargar los períodos.';
+      },
+    });
+  }
+
+  onManualPeriodSelected(receipt: BulkReceipt) {
+    receipt.manualPaymentId = undefined;
+    receipt.manualMatch = undefined;
+    receipt.manualPeriod = undefined;
+    if (!receipt.manualPeriodId) return;
+    this.svc.getPeriod(receipt.manualPeriodId).subscribe({
+      next: period => receipt.manualPeriod = period,
+      error: err => receipt.error = err.error?.message || 'No se pudieron cargar las alícuotas.',
+    });
+  }
+
+  onManualPaymentSelected(receipt: BulkReceipt) {
+    const payment = receipt.manualPeriod?.payments?.find(p => p.id === receipt.manualPaymentId);
+    receipt.manualMatch = payment ? this.asOcrMatch(payment) : undefined;
+  }
+
+  private asOcrMatch(payment: AliquotPayment): OcrOwnerMatch {
+    return {
+      paymentId: payment.id, paymentStatus: payment.status,
+      aliquotAmount: payment.aliquotAmount, moraAtBilling: payment.moraAtBilling,
+      amountPaid: payment.amountPaid, totalDue: payment.totalDue,
+      owner: {
+        id: payment.ownerId,
+        fullName: payment.owner?.fullName || 'Propietario',
+        apartmentNumber: payment.owner?.apartmentNumber || '—',
+      },
+    };
+  }
+
+  ocrConfidence(receipt: BulkReceipt): number | null {
+    const confidence = receipt.scan?.extractedData.confidence_score;
+    return typeof confidence === 'number' ? confidence : null;
+  }
+
+  confirmReceipt(receipt: BulkReceipt) {
+    const match = this.receiptMatch(receipt);
+    const targetPeriod = receipt.manualPeriod || this.bulkPeriod;
+    if (!targetPeriod || !match || !this.canConfirmReceipt(receipt)) return;
+    const periodName = `${this.monthName(targetPeriod.month)} ${targetPeriod.year}`;
+    this.confirm.confirm({
+      header: 'Confirmar pago detectado',
+      message: `Se registrará $${receipt.amount!.toFixed(2)} en la alícuota de ${periodName}, departamento ${match.owner.apartmentNumber}, con fecha ${receipt.paymentDate}. Verifica que corresponde a este mes antes de continuar.`,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: `Confirmar depto. ${match.owner.apartmentNumber}`,
+      rejectLabel: 'Cancelar',
+      accept: () => this.persistReceipt(receipt),
+    });
+  }
+
+  private persistReceipt(receipt: BulkReceipt) {
+    const match = this.receiptMatch(receipt);
+    if (!match || !receipt.amount || !receipt.paymentDate) return;
+    receipt.status = 'confirming';
+    this.svc.confirmOcrPayment(match.paymentId, receipt.file, {
+      amount: receipt.amount,
+      paymentDate: receipt.paymentDate,
+      ocrSenderName: receipt.scan?.extractedData.sender_name,
+      ocrBank: receipt.scan?.extractedData.bank,
+    }).subscribe({
+      next: () => {
+        receipt.status = 'confirmed';
+        this.load();
+        this.msg.add({ severity: 'success', summary: 'Pago registrado', detail: `Departamento ${match.owner.apartmentNumber}` });
+      },
+      error: err => {
+        receipt.status = 'ready';
+        receipt.error = err.error?.message || 'No se pudo guardar el pago.';
+        this.msg.add({ severity: 'error', summary: 'No se registró el pago', detail: receipt.error });
+      },
+    });
+  }
 
   confirmDelete(p: CondoExpensePeriod) {
     this.confirm.confirm({

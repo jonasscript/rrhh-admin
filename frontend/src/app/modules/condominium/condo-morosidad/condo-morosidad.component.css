@@ -2,3 +2,18 @@
     .mora-badge { background: #fee2e2; color: #b91c1c; padding: 3px 10px; border-radius: 10px; font-weight: 600; }
     .empty-state { text-align: center; padding: 3rem; color: #6b7280; display: flex; flex-direction: column; align-items: center; gap: .75rem; }
     .total-row { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; padding: 1rem; background: #fff7ed; border-radius: 8px; margin-top: 1rem; font-size: 1rem; }
+    .debt-periods-btn { white-space: nowrap; }
+    .debt-dialog-owner { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; margin-bottom: 1rem; padding: .75rem 1rem; border-radius: 8px; background: #fff7ed; }
+    .debt-dialog-owner > span:nth-child(2) { color: #64748b; flex: 1; }
+    .pay-mora-btn { white-space: nowrap; }
+    .mora-history-title { margin: 1.5rem 0 .65rem; font-size: 1rem; color: #1e3a5f; }
+    .debt-proof-link { color: #2563eb; text-decoration: none; }
+    .mora-payment-summary { display: flex; flex-direction: column; gap: .3rem; margin-bottom: 1rem; padding: .8rem; border-radius: 8px; background: #fff7ed; }
+    .mora-payment-summary b { color: #b91c1c; }
+    .mora-payment-field { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1rem; }
+    .mora-payment-field label { font-size: .88rem; font-weight: 600; }
+    .mora-payment-error { color: #b91c1c; }
+    .mora-file-picker, .mora-file-selected { display: inline-flex; align-items: center; gap: .45rem; width: max-content; padding: .5rem .75rem; border-radius: 6px; font-size: .85rem; }
+    .mora-file-picker { cursor: pointer; color: #2563eb; border: 1px dashed #60a5fa; }
+    .mora-file-selected { background: #f1f5f9; }
+    .mora-payment-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.25rem; }

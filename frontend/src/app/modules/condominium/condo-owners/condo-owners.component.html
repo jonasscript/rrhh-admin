@@ -41,7 +41,7 @@
             <td>{{ owner.participationPct }}%</td>
             <td>
               @if (owner.moraAmount > 0) {
-                <span class="mora-badge">\${{ owner.moraAmount | number:'1.2-2' }}</span>
+                <span class="mora-badge">${{ owner.moraAmount | number:'1.2-2' }}</span>
               } @else {
                 <span class="text-color-secondary text-sm">Sin mora</span>
               }
@@ -134,7 +134,7 @@
     <p-dialog [(visible)]="showMoraDialog" header="Ajustar Mora" [modal]="true" [style]="{width: '380px'}">
       @if (moraOwner) {
         <p><strong>{{ moraOwner.fullName }}</strong> — Depto. {{ moraOwner.apartmentNumber }}</p>
-        <p>Mora actual: <strong class="mora-badge">\${{ moraOwner.moraAmount | number:'1.2-2' }}</strong></p>
+        <p>Mora actual: <strong class="mora-badge">${{ moraOwner.moraAmount | number:'1.2-2' }}</strong></p>
         <div class="field">
           <label>Operación</label>
           <select class="w-full p-inputtext" [(ngModel)]="moraOperation">

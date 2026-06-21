@@ -26,6 +26,12 @@ const config = {
     apiSecret: process.env.CLOUDINARY_API_SECRET || '',
   },
 
+  // El navegador siempre consume este backend; aquí se configura el servicio
+  // OCR al que se reenvían los comprobantes.
+  ocr: {
+    scanUrl: process.env.OCR_SCAN_URL || 'http://localhost:8000/ocr/scan',
+  },
+
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
 };
 

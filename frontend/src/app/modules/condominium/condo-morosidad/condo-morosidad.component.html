@@ -1,3 +1,5 @@
+<p-toast />
+
 <div class="page">
       <div class="page-header">
         <h2>Reporte de Morosidad</h2>
@@ -27,8 +29,19 @@
             <td>{{ owner.fullName }}</td>
             <td>{{ owner.email }}</td>
             <td>{{ owner.participationPct }}%</td>
-            <td><span class="mora-badge">\${{ owner.moraAmount | number:'1.2-2' }}</span></td>
-            <td>{{ owner.aliquotPayments?.length || 0 }} período(s)</td>
+            <td>
+              <span class="mora-badge">${{ owner.moraAmount | number:'1.2-2' }}</span>
+              <button pButton icon="pi pi-dollar" label="Pagar mora" [text]="true" size="small"
+                class="pay-mora-btn" (click)="openMoraPayment(owner)"></button>
+            </td>
+            <td>
+              @if ((owner.overduePeriods || 0) > 0) {
+                <button pButton [label]="owner.overduePeriods + ' período(s)'" icon="pi pi-list"
+                  [text]="true" size="small" class="debt-periods-btn" (click)="openDebtPeriods(owner)"></button>
+              } @else {
+                <span class="text-color-secondary">0 período(s)</span>
+              }
+            </td>
           </tr>
         </ng-template>
       </p-table>
@@ -36,7 +49,122 @@
       @if (owners.length > 0) {
         <div class="total-row">
           <strong>Total mora acumulada:</strong>
-          <span class="mora-badge">\${{ totalMora | number:'1.2-2' }}</span>
+          <span class="mora-badge">${{ totalMora | number:'1.2-2' }}</span>
         </div>
       }
+
+      <p-dialog [(visible)]="showDebtPeriods" header="Períodos que generaron mora" [modal]="true"
+        [style]="{ width: '780px', maxWidth: '96vw' }" [draggable]="false">
+        @if (selectedOwner) {
+          <div class="debt-dialog-owner">
+            <strong>Depto. {{ selectedOwner.apartmentNumber }}</strong>
+            <span>{{ selectedOwner.fullName }}</span>
+            <span class="mora-badge">Mora acumulada: ${{ selectedOwner.moraAmount | number:'1.2-2' }}</span>
+          </div>
+
+          @if ((selectedOwner.debtPeriods?.length || 0) > 0) {
+            <p-table [value]="selectedOwner.debtPeriods || []" stripedRows styleClass="p-datatable-sm">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Período</th>
+                  <th>Alícuota</th>
+                  <th>Extras</th>
+                  <th>Pagado</th>
+                  <th>Pendiente que generó mora</th>
+                  <th>Cierre</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-debt>
+                <tr>
+                  <td><strong>{{ monthName(debt.month) }} {{ debt.year }}</strong></td>
+                  <td>{{ debt.aliquotAmount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                  <td>{{ debt.extrasTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                  <td>{{ debt.amountPaid | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                  <td><span class="mora-badge">{{ debt.pendingAmount | currency:'USD':'symbol-narrow':'1.2-2' }}</span></td>
+                  <td>{{ debt.closedAt ? (debt.closedAt | date:'dd/MM/yy') : '—' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          } @else {
+            <p class="text-color-secondary">Esta mora no tiene períodos asociados; pudo haber sido registrada manualmente.</p>
+          }
+
+          @if ((selectedOwner.moraPayments?.length || 0) > 0) {
+            <h4 class="mora-history-title">Abonos a mora registrados</h4>
+            <p-table [value]="selectedOwner.moraPayments || []" stripedRows styleClass="p-datatable-sm">
+              <ng-template pTemplate="header">
+                <tr><th>Fecha</th><th>Tipo</th><th>Período de mora</th><th>Valor</th><th>Notas</th><th>Comprobante</th></tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-payment>
+                <tr>
+                  <td>{{ payment.paymentDate | date:'dd/MM/yy' }}</td>
+                  <td>{{ payment.paymentType === 'DIRECT' ? 'Pago directo' : 'Excedente de alícuota' }}</td>
+                  <td>{{ payment.debtMonth && payment.debtYear ? monthName(payment.debtMonth) + ' ' + payment.debtYear : 'Mora manual' }}</td>
+                  <td>{{ payment.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                  <td>{{ payment.notes || '—' }}</td>
+                  <td>
+                    @if (payment.proofUrl) {
+                      <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
+                        class="debt-proof-link" (click)="openProofPreview(payment.proofUrl)"></button>
+                    } @else { <span class="text-color-secondary">Pendiente</span> }
+                  </td>
+                </tr>
+              </ng-template>
+            </p-table>
+          }
+        }
+      </p-dialog>
+
+      <p-dialog [(visible)]="showMoraPayment" header="Registrar pago de mora" [modal]="true"
+        [style]="{ width: '460px', maxWidth: '96vw' }" [draggable]="false">
+        @if (selectedOwner) {
+          <div class="mora-payment-summary">
+            <strong>Depto. {{ selectedOwner.apartmentNumber }} — {{ selectedOwner.fullName }}</strong>
+            <span>Mora actual: <b>${{ selectedOwner.moraAmount | number:'1.2-2' }}</b></span>
+          </div>
+          <div class="mora-payment-field">
+            <label>Valor a abonar *</label>
+            <p-inputNumber [(ngModel)]="moraPaymentAmount" [min]="0.01" [max]="selectedOwner.moraAmount"
+              [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+            @if (moraPaymentAmount && moraPaymentAmount > selectedOwner.moraAmount) {
+              <small class="mora-payment-error">El abono no puede superar la mora actual.</small>
+            }
+          </div>
+          <div class="mora-payment-field">
+            <label>Fecha de pago *</label>
+            <input pInputText type="date" [(ngModel)]="moraPaymentDate" class="w-full" />
+          </div>
+          <div class="mora-payment-field">
+            <label>Notas</label>
+            <input pInputText [(ngModel)]="moraPaymentNotes" class="w-full" placeholder="Ej. transferencia bancaria" />
+          </div>
+          <div class="mora-payment-field">
+            <label>Comprobante *</label>
+            @if (moraPaymentFile) {
+              <div class="mora-file-selected"><i class="pi pi-paperclip"></i>{{ moraPaymentFile.name }}</div>
+            } @else {
+              <label class="mora-file-picker"><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden (change)="onMoraPaymentFileSelected($event)" /><i class="pi pi-upload"></i> Adjuntar comprobante</label>
+            }
+          </div>
+          <div class="mora-payment-actions">
+            <button pButton label="Cancelar" [outlined]="true" (click)="showMoraPayment=false"></button>
+            <button pButton label="Registrar abono" icon="pi pi-check" [loading]="savingMoraPayment"
+              [disabled]="!moraPaymentFile || !moraPaymentAmount || moraPaymentAmount > selectedOwner.moraAmount"
+              (click)="saveMoraPayment()"></button>
+          </div>
+        }
+      </p-dialog>
+
+      <p-dialog [(visible)]="showProofPreview" header="Comprobante de pago" [modal]="true"
+        [style]="{ width: '900px', maxWidth: '96vw' }" [draggable]="false">
+        @if (proofPreviewUrl) {
+          <div class="proof-preview">
+            @if (isPdfProof() && proofPreviewResource) {
+              <iframe [src]="proofPreviewResource" title="Comprobante PDF"></iframe>
+            } @else {
+              <img [src]="proofPreviewUrl" alt="Comprobante de pago de mora" />
+            }
+          </div>
+        }
+      </p-dialog>
     </div>

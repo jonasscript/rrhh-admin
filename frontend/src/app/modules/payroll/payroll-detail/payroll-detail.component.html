@@ -37,12 +37,12 @@
         <tr>
           <td>{{ d.first_name }} {{ d.last_name }}</td>
           <td>{{ d.cedula }}</td>
-          <td>{{ d.base_salary | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td>{{ d.overtime_pay | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td>{{ (+d.decimo_tercero + +d.decimo_cuarto + +d.fondos_reserva) | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right font-bold text-green-700">{{ d.to_employee | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right text-orange-600">{{ d.to_iess | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right text-blue-700">{{ d.employer_cost | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td>{{ d.base_salary | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td>{{ d.overtime_pay | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td>{{ (+d.decimo_tercero + +d.decimo_cuarto + +d.fondos_reserva) | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right font-bold text-green-700">{{ d.to_employee | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right text-orange-600">{{ d.to_iess | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right text-blue-700">{{ d.employer_cost | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td>
             <p-button icon="pi pi-file-pdf" [text]="true" severity="danger"
                       pTooltip="Descargar PDF" (onClick)="downloadPdf(d.id)" />
@@ -53,20 +53,20 @@
         @if (summary(); as s) {
           <tr class="payroll-subtotal">
             <td colspan="5" class="text-right font-semibold">Total a cuentas bancarias:</td>
-            <td class="text-right font-bold text-green-700">{{ s.total_to_employees | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td class="text-right font-bold text-green-700">{{ s.total_to_employees | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
             <td colspan="3"></td>
           </tr>
           <tr class="payroll-subtotal">
             <td colspan="5" class="text-right font-semibold">Total planilla IESS:</td>
             <td></td>
-            <td class="text-right font-bold text-orange-600">{{ s.total_to_iess | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td class="text-right font-bold text-orange-600">{{ s.total_to_iess | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
             <td colspan="2"></td>
           </tr>
           <tr class="payroll-total">
             <td colspan="5" class="text-right font-bold">COSTO TOTAL EMPRESA:</td>
             <td></td>
             <td></td>
-            <td class="text-right font-bold text-blue-700">{{ s.total_employer_cost | currency:'USD':'symbol':'1.2-2' }}</td>
+            <td class="text-right font-bold text-blue-700">{{ s.total_employer_cost | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
             <td></td>
           </tr>
         }

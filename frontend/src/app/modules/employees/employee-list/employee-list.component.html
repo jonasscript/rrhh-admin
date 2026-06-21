@@ -40,17 +40,17 @@
           <td>{{ emp.cedula }}</td>
           <td>{{ emp.department_name || '—' }}</td>
           <td>{{ emp.position }}</td>
-          <td>{{ emp.base_salary | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td>{{ emp.base_salary | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td>
             @if (emp.iess_affiliate) {
-              {{ emp.base_salary * 0.0945 | currency:'USD':'symbol':'1.2-2' }}
+              {{ emp.base_salary * 0.0945 | currency:'USD':'symbol-narrow':'1.2-2' }}
             } @else {
               <span class="no-affiliate">—</span>
             }
           </td>
           <td>
             @if (emp.iess_affiliate) {
-              {{ emp.base_salary * 0.1115 | currency:'USD':'symbol':'1.2-2' }}
+              {{ emp.base_salary * 0.1115 | currency:'USD':'symbol-narrow':'1.2-2' }}
             } @else {
               <span class="no-affiliate">—</span>
             }

@@ -34,7 +34,7 @@
                   <div><span class="font-semibold">Cargo:</span> {{ e.position }}</div>
                   <div><span class="font-semibold">Contrato:</span> {{ e.contract_type }}</div>
                   <div><span class="font-semibold">Ingreso:</span> {{ e.start_date | date:'dd/MM/yyyy' }}</div>
-                  <div><span class="font-semibold">Salario:</span> {{ e.base_salary | currency:'USD':'symbol':'1.2-2' }}</div>
+                  <div><span class="font-semibold">Salario:</span> {{ e.base_salary | currency:'USD':'symbol-narrow':'1.2-2' }}</div>
                   <div><span class="font-semibold">Estado:</span>
                     <span class="status-badge {{ e.status }} ml-2">{{ e.status }}</span>
                   </div>
@@ -105,27 +105,27 @@
                   <div class="obl-sum-title">Resumen de costos al IESS este empleado</div>
                   <div class="obl-sum-row">
                     <span>Aporte empleado (9.45%)</span>
-                    <span>{{ e.base_salary * 0.0945 | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ e.base_salary * 0.0945 | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row" *ngIf="(oblForm.value.iessQuirofario || 0) > 0">
                     <span>Préstamo quirografario</span>
-                    <span>{{ oblForm.value.iessQuirofario | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ oblForm.value.iessQuirofario | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row" *ngIf="(oblForm.value.iessHipotecario || 0) > 0">
                     <span>Préstamo hipotecario</span>
-                    <span>{{ oblForm.value.iessHipotecario | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ oblForm.value.iessHipotecario | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row separator">
                     <span>Subtotal empleado → IESS</span>
-                    <span>{{ (e.base_salary * 0.0945 + (oblForm.value.iessQuirofario||0) + (oblForm.value.iessHipotecario||0)) | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ (e.base_salary * 0.0945 + (oblForm.value.iessQuirofario||0) + (oblForm.value.iessHipotecario||0)) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row employer-row">
                     <span>Aporte patronal IESS (11.15%)</span>
-                    <span>{{ e.base_salary * 0.1115 | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ e.base_salary * 0.1115 | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row employer-row" *ngIf="oblForm.value.fondosReservaAplica">
                     <span>Fondo de reserva (8.33%)</span>
-                    <span>{{ e.base_salary * 0.0833 | currency:'USD':'symbol':'1.2-2' }}</span>
+                    <span>{{ e.base_salary * 0.0833 | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                   </div>
                   <div class="obl-sum-row total-row">
                     <span>Total planilla IESS del empleado</span>
@@ -135,7 +135,7 @@
                       + (oblForm.value.iessHipotecario||0)
                       + e.base_salary * 0.1115
                       + (oblForm.value.fondosReservaAplica ? e.base_salary * 0.0833 : 0))
-                      | currency:'USD':'symbol':'1.2-2'
+                      | currency:'USD':'symbol-narrow':'1.2-2'
                     }}</span>
                   </div>
                 </div>
@@ -168,9 +168,9 @@
             <ng-template pTemplate="body" let-p>
               <tr>
                 <td>{{ p.month }}/{{ p.year }}</td>
-                <td>{{ p.gross_pay | currency:'USD':'symbol':'1.2-2' }}</td>
-                <td>{{ p.iess_employee | currency:'USD':'symbol':'1.2-2' }}</td>
-                <td>{{ p.net_pay | currency:'USD':'symbol':'1.2-2' }}</td>
+                <td>{{ p.gross_pay | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                <td>{{ p.iess_employee | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                <td>{{ p.net_pay | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
                 <td><span class="status-badge {{ p.status }}">{{ p.status }}</span></td>
               </tr>
             </ng-template>

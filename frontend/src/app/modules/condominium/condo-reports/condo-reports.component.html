@@ -41,31 +41,31 @@
       <p-card styleClass="summ-card summ-card--billed">
         <div class="summ-content">
           <span class="summ-label">Facturado</span>
-          <span class="summ-value">{{ report.summary.total_billed | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span class="summ-value">{{ report.summary.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--collected">
         <div class="summ-content">
           <span class="summ-label">Cobrado</span>
-          <span class="summ-value">{{ report.summary.total_collected | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span class="summ-value">{{ report.summary.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--expenses">
         <div class="summ-content">
           <span class="summ-label">Gastos Operativos</span>
-          <span class="summ-value">{{ report.summary.total_expenses | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span class="summ-value">{{ report.summary.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--provisions">
         <div class="summ-content">
           <span class="summ-label">Provisiones</span>
-          <span class="summ-value">{{ report.summary.total_provisions | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span class="summ-value">{{ report.summary.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </p-card>
       <p-card styleClass="summ-card" [ngClass]="report.summary.net_result >= 0 ? 'summ-card--positive' : 'summ-card--negative'">
         <div class="summ-content">
           <span class="summ-label">Balance Neto</span>
-          <span class="summ-value">{{ sign(report.summary.net_result) }}{{ report.summary.net_result | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span class="summ-value">{{ sign(report.summary.net_result) }}{{ report.summary.net_result | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </p-card>
     </div>
@@ -95,20 +95,20 @@
               (click)="toggleRow(row)"></button>
           </td>
           <td><strong>{{ monthLabel(row.period.month) }} {{ row.period.year }}</strong></td>
-          <td class="text-right">{{ row.ingresos.total_billed | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right text-green-600">{{ row.ingresos.total_collected | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right">{{ row.ingresos.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right text-green-600">{{ row.ingresos.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td class="text-center">
             <p-tag [value]="pctCollected(row) + '%'"
               [severity]="pctCollected(row) >= 90 ? 'success' : pctCollected(row) >= 60 ? 'warning' : 'danger'" />
           </td>
-          <td class="text-right">{{ row.egresos.total_expenses | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right text-color-secondary">{{ row.egresos.total_provisions | currency:'USD':'symbol':'1.2-2' }}</td>
-          <td class="text-right">{{ row.egresos.grand_total | currency:'USD':'symbol':'1.2-2' }}</td>
+          <td class="text-right">{{ row.egresos.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right text-color-secondary">{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right">{{ row.egresos.grand_total | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td class="text-right" [ngClass]="row.balance >= 0 ? 'text-green-600' : 'text-red-500'">
-            <strong>{{ sign(row.balance) }}{{ row.balance | currency:'USD':'symbol':'1.2-2' }}</strong>
+            <strong>{{ sign(row.balance) }}{{ row.balance | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </td>
           <td class="text-right" [ngClass]="row.cumulative >= 0 ? '' : 'text-red-500'">
-            {{ sign(row.cumulative) }}{{ row.cumulative | currency:'USD':'symbol':'1.2-2' }}
+            {{ sign(row.cumulative) }}{{ row.cumulative | currency:'USD':'symbol-narrow':'1.2-2' }}
           </td>
         </tr>
 
@@ -129,7 +129,7 @@
                           <tr>
                             <td>{{ item.name }}</td>
                             <td><small class="text-color-secondary">{{ item.category }}</small></td>
-                            <td class="text-right">{{ item.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+                            <td class="text-right">{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
                           </tr>
                         }
                       </tbody>
@@ -150,7 +150,7 @@
                           <tr>
                             <td>{{ fe.fund_type === 'CAPITAL_RESERVE' ? 'Capital' : 'Incobrables' }}</td>
                             <td><small class="text-color-secondary">{{ fe.entry_type }}</small></td>
-                            <td class="text-right">{{ fe.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+                            <td class="text-right">{{ fe.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
                           </tr>
                         }
                       </tbody>
@@ -180,12 +180,12 @@
           @for (entry of fundsEntries(report.funds); track entry.id) {
             <div class="fund-bal-item">
               <span class="fund-bal-label">{{ entry.name }}</span>
-              <span class="fund-bal-value">{{ entry.balance | currency:'USD':'symbol':'1.2-2' }}</span>
+              <span class="fund-bal-value">{{ entry.balance | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
             </div>
           }
           <div class="fund-bal-item fund-bal-item--total">
             <span class="fund-bal-label">Total fondos</span>
-            <span class="fund-bal-value">{{ totalFundsBalance(report.funds) | currency:'USD':'symbol':'1.2-2' }}</span>
+            <span class="fund-bal-value">{{ totalFundsBalance(report.funds) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
           </div>
         </div>
       </div>

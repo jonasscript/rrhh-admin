@@ -14,10 +14,11 @@
               <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="generate()" [loading]="generating"></button>
             }
             @if (period.payments?.length && period.status !== 'CLOSED') {
+              <button pButton icon="pi pi-images" label="Cargar comprobantes" severity="info" (click)="openBulkUpload()"></button>
               <button pButton icon="pi pi-send" label="Enviar correos" severity="success" (click)="sendEmails()" [loading]="sending"></button>
             }
             @if (period.status === 'APPROVED') {
-              <button pButton icon="pi pi-lock" label="Cerrar período" severity="warning" (click)="confirmClose()"></button>
+              <button pButton icon="pi pi-lock" label="Cerrar período" severity="warning" (click)="confirmClose()" [disabled]="closing"></button>
             }
           </div>
         </div>
@@ -26,21 +27,21 @@
         <div class="summary-grid">
           <div class="summary-card">
             <span class="label">Gastos fijos</span>
-            <span class="value">\${{ fixedSum | number:'1.2-2' }}</span>
+            <span class="value">${{ fixedSum | number:'1.2-2' }}</span>
           </div>
           <div class="summary-card">
             <span class="label">Gastos variables</span>
-            <span class="value">\${{ variableSum | number:'1.2-2' }}</span>
+            <span class="value">${{ variableSum | number:'1.2-2' }}</span>
           </div>
           @if ((period.total_provisions || 0) > 0) {
             <div class="summary-card">
               <span class="label">Provisiones</span>
-              <span class="value">\${{ period.total_provisions | number:'1.2-2' }}</span>
+              <span class="value">${{ period.total_provisions | number:'1.2-2' }}</span>
             </div>
           }
           <div class="summary-card total">
             <span class="label">Total del período</span>
-            <span class="value">\${{ ((period.grand_total || 0) > 0 ? period.grand_total : period.total_expenses) | number:'1.2-2' }}</span>
+            <span class="value">${{ ((period.grand_total || 0) > 0 ? period.grand_total : period.total_expenses) | number:'1.2-2' }}</span>
           </div>
           @if (period.variable_notes) {
             <div class="summary-card notes">
@@ -55,12 +56,13 @@
           <ng-template pTemplate="header">
             <tr>
               <th>Depto.</th>
-              <th>Propietario</th>
+              <th style="width:150px">Propietario</th>
               <th>%</th>
               <th>Alícuota</th>
               <th>Cargo extra</th>
               <th>Total</th>
               <th>Pagado</th>
+              <th>Pendiente</th>
               <th>F. Pago</th>
               <th>Comprobante</th>
               <th>Estado</th>
@@ -70,30 +72,32 @@
           <ng-template pTemplate="body" let-payment>
             <tr>
               <td><strong>{{ payment.owner?.apartmentNumber }}</strong></td>
-              <td>{{ payment.owner?.fullName }}</td>
+              <td class="owner-column"><span [pTooltip]="payment.owner?.fullName || ''" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true">{{ payment.owner?.fullName }}</span></td>
               <td>{{ payment.owner?.participationPct }}%</td>
-              <td>\${{ payment.aliquotAmount | number:'1.2-2' }}</td>
+              <td>${{ payment.aliquotAmount | number:'1.2-2' }}</td>
               <td>
                 @if (payment.extras.length > 0) {
                   <span class="extra-charge" (click)="openExtraDialog(payment)" style="cursor:pointer"
                     [pTooltip]="payment.extras.length + ' cargo(s) extra'"
-                    tooltipPosition="top">
+                    tooltipPosition="top" [appendTo]="'body'" [fitContent]="true">
                     ${{ payment.extrasTotal | number:'1.2-2' }}
                   </span>
                 } @else {
                   <button pButton icon="pi pi-plus" [text]="true" [rounded]="true" size="small"
                     severity="secondary" (click)="openExtraDialog(payment)"
-                    pTooltip="Agregar cargo extra" [disabled]="payment.status === 'PAID'"></button>
+                    pTooltip="Agregar cargo extra" [appendTo]="'body'" [fitContent]="true" [disabled]="payment.status === 'PAID'"></button>
                 }
               </td>
-              <td><strong>\${{ payment.totalDue | number:'1.2-2' }}</strong></td>
-              <td>\${{ payment.amountPaid | number:'1.2-2' }}</td>
+              <td><strong>${{ payment.totalDue | number:'1.2-2' }}</strong></td>
+              <td>${{ payment.amountPaid | number:'1.2-2' }}</td>
+              <td [class.mora-txt]="periodPending(payment) > 0">
+                ${{ periodPending(payment) | number:'1.2-2' }}
+              </td>
               <td>{{ payment.paymentDate ? (payment.paymentDate | date:'dd/MM/yy') : '—' }}</td>
               <td>
                 @if (payment.proofUrl) {
-                  <a [href]="payment.proofUrl" target="_blank" class="proof-link">
-                    <i class="pi pi-paperclip"></i> Ver
-                  </a>
+                  <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
+                    class="proof-link" (click)="openProofPreview(payment)"></button>
                 } @else {
                   <span class="text-color-secondary text-sm">Sin comprobante</span>
                 }
@@ -102,19 +106,17 @@
                 <p-tag [value]="paymentStatusLabel(payment.status)"
                   [severity]="paymentStatusSeverity(payment.status)" />
               </td>
-              <td>
+              <td class="payment-actions">
                 <button pButton icon="pi pi-dollar" [rounded]="true" [text]="true"
-                  (click)="openPaymentDialog(payment)" pTooltip="Registrar pago"
+                  (click)="openPaymentDialog(payment)" pTooltip="Registrar pago y comprobante" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"
                   [disabled]="payment.status === 'PAID'"></button>
-                <button pButton icon="pi pi-upload" [rounded]="true" [text]="true" severity="info"
-                  (click)="openProofDialog(payment)" pTooltip="Subir comprobante"></button>
                 <button pButton icon="pi pi-file-pdf" [rounded]="true" [text]="true" severity="secondary"
-                  (click)="downloadPdf(payment)" pTooltip="Descargar PDF"></button>
+                  (click)="downloadPdf(payment)" pTooltip="Descargar PDF" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"></button>
               </td>
             </tr>
           </ng-template>
           <ng-template pTemplate="emptymessage">
-            <tr><td colspan="12" class="text-center p-4 text-color-secondary">
+            <tr><td colspan="13" class="text-center p-4 text-color-secondary">
               No hay alícuotas generadas. Haz clic en "Generar alícuotas" para calcularlas.
             </td></tr>
           </ng-template>
@@ -124,28 +126,54 @@
       <div class="text-center p-5">Cargando...</div>
     }
 
+    @if (closing) {
+      <div class="period-closing-overlay" role="status" aria-live="polite">
+        <div class="period-closing-card">
+          <i class="pi pi-spin pi-spinner"></i>
+          <h3>Cerrando período…</h3>
+          <p>Estamos calculando los saldos pendientes y actualizando la mora. Este proceso puede tardar unos minutos.</p>
+          <span>Por favor, no cierres esta ventana.</span>
+        </div>
+      </div>
+    }
+
     <!-- Register Payment Dialog -->
     <p-dialog [(visible)]="showPaymentDialog" header="Registrar Pago" [modal]="true" [style]="{width: '440px'}">
       @if (selectedPayment) {
         <div class="payment-summary">
           <span><strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong> — {{ selectedPayment.owner?.fullName }}</span>
-          <span>Total: <strong>\${{ selectedPayment.totalDue | number:'1.2-2' }}</strong></span>
+          <span>Total: <strong>${{ selectedPayment.totalDue | number:'1.2-2' }}</strong></span>
           @if (selectedPayment.extrasTotal > 0) {
             <span class="text-sm text-color-secondary">
-              Alícuota \${{ selectedPayment.aliquotAmount | number:'1.2-2' }}
-              + Mora \${{ selectedPayment.moraAtBilling | number:'1.2-2' }}
-              + Extras \${{ selectedPayment.extrasTotal | number:'1.2-2' }}
+              Alícuota ${{ selectedPayment.aliquotAmount | number:'1.2-2' }}
+              + Extras ${{ selectedPayment.extrasTotal | number:'1.2-2' }}
             </span>
           }
-          <span>Ya pagado: \${{ selectedPayment.amountPaid | number:'1.2-2' }}</span>
-          <span>Pendiente: <strong class="mora-txt">\${{ (selectedPayment.totalDue - selectedPayment.amountPaid) | number:'1.2-2' }}</strong></span>
+          <span>Ya pagado: ${{ selectedPayment.amountPaid | number:'1.2-2' }}</span>
+          <span>Pendiente del período: <strong class="mora-txt">${{ periodPending(selectedPayment) | number:'1.2-2' }}</strong></span>
         </div>
 
         <form [formGroup]="paymentForm" (ngSubmit)="registerPayment()">
           <div class="field">
             <label>Monto pagado *</label>
-            <p-inputNumber formControlName="amountPaid" [min]="0.01" [minFractionDigits]="2" prefix="\$" class="w-full" inputStyleClass="w-full" />
+            <p-inputNumber formControlName="amountPaid" [min]="0.01" [minFractionDigits]="2" prefix="$" class="w-full" inputStyleClass="w-full" />
           </div>
+          @if (paymentExcess > 0) {
+            <div class="mora-application">
+              <i class="pi pi-info-circle"></i>
+              <div>
+                <strong>El pago supera el saldo de este período por ${{ paymentExcess | number:'1.2-2' }}.</strong>
+                @if (moraToApply > 0) {
+                  <span>Se descontarán ${{ moraToApply | number:'1.2-2' }} de la mora del propietario. La mora final será ${{ finalMoraAfterPayment | number:'1.2-2' }}.</span>
+                } @else {
+                  <span>El propietario no tiene mora disponible para aplicar este excedente.</span>
+                }
+                @if (paymentExcess > ownerMoraAvailable) {
+                  <small>El excedente supera la mora disponible (${{ ownerMoraAvailable | number:'1.2-2' }}). Reduce el valor para continuar.</small>
+                }
+              </div>
+            </div>
+          }
           <div class="field">
             <label>Fecha de pago *</label>
             <p-calendar formControlName="paymentDate" dateFormat="yy-mm-dd" [showIcon]="true" class="w-full" inputStyleClass="w-full" />
@@ -158,11 +186,171 @@
             <label>Notas</label>
             <input pInputText formControlName="notes" class="w-full" />
           </div>
+          <div class="field payment-proof-field">
+            <label>Comprobante *</label>
+            @if (selectedFile) {
+              <div class="payment-proof-selected">
+                <i class="pi pi-paperclip"></i>
+                <span>{{ selectedFile.name }}</span>
+                <button pButton icon="pi pi-times" [rounded]="true" [text]="true" severity="danger" type="button" (click)="clearFile()"></button>
+              </div>
+            } @else {
+              <label class="payment-proof-picker">
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden (change)="onFileSelect($event)" />
+                <i class="pi pi-upload"></i> Adjuntar comprobante
+              </label>
+            }
+          </div>
           <div class="dialog-footer">
             <button pButton type="button" label="Cancelar" class="p-button-outlined" (click)="showPaymentDialog = false"></button>
-            <button pButton type="submit" label="Registrar pago" [loading]="saving" [disabled]="paymentForm.invalid"></button>
+            <button pButton type="submit" label="Registrar y subir" [loading]="saving || uploadingProof" [disabled]="paymentForm.invalid || !selectedFile || !paymentAmountAllowed"></button>
           </div>
         </form>
+      }
+    </p-dialog>
+
+    <!-- Vista previa del comprobante sin salir de la pantalla -->
+    <p-dialog [(visible)]="showProofPreview" header="Comprobante de pago" [modal]="true"
+      [style]="{ width: '900px', maxWidth: '96vw' }" [draggable]="false">
+      @if (proofPreviewUrl) {
+        <div class="proof-preview">
+          @if (isPdfProof() && proofPreviewResource) {
+            <iframe [src]="proofPreviewResource" title="Comprobante PDF"></iframe>
+          } @else {
+            <img [src]="proofPreviewUrl" alt="Comprobante de pago" />
+          }
+        </div>
+      }
+    </p-dialog>
+
+    <!-- Carga masiva de comprobantes del período actual -->
+    <p-dialog [(visible)]="showBulkUpload" header="Carga de comprobantes con OCR" [modal]="true"
+      [style]="{ width: '900px', maxWidth: '96vw' }" [draggable]="false">
+      @if (period) {
+        <div class="bulk-upload">
+          <div class="bulk-intro">
+            <div>
+              <strong>{{ monthName }} {{ period.year }}</strong>
+              <p>Los comprobantes se leen uno por uno. Confirma cada coincidencia antes de subirla al bucket y registrarla en la alícuota.</p>
+            </div>
+            <label for="detail-bulk-receipts" class="p-button p-component">
+              <i class="pi pi-upload p-button-icon p-button-icon-left"></i>
+              <span class="p-button-label">Agregar comprobantes</span>
+            </label>
+            <input id="detail-bulk-receipts" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
+              class="hidden-file-input" (change)="onBulkFilesSelected($event)" />
+          </div>
+
+          @if (bulkProcessing) {
+            <div class="bulk-processing"><i class="pi pi-spin pi-spinner"></i> Leyendo comprobantes con OCR, uno a la vez…</div>
+          }
+
+          @if (bulkReceipts.length === 0) {
+            <div class="bulk-empty"><i class="pi pi-images"></i><span>Selecciona uno o varios JPG, PNG, WEBP o PDF.</span></div>
+          } @else {
+            <div class="receipt-list">
+              @for (receipt of bulkReceipts; track receipt.file.name + receipt.file.lastModified) {
+                <article class="receipt-card" [class.receipt-card--error]="receipt.status === 'error'" [class.receipt-card--done]="receipt.status === 'confirmed'">
+                  <div class="receipt-file">
+                    <i class="pi" [class.pi-file]="receipt.status !== 'confirmed'" [class.pi-check-circle]="receipt.status === 'confirmed'"></i>
+                    <div><strong>{{ receipt.file.name }}</strong><small>{{ (receipt.file.size / 1024).toFixed(1) }} KB</small></div>
+                  </div>
+
+                  @if (receipt.status === 'queued' || receipt.status === 'scanning') {
+                    <div class="receipt-state"><i class="pi pi-spin pi-spinner"></i> Leyendo OCR…</div>
+                  } @else if (receipt.status === 'error') {
+                    <div class="receipt-state receipt-state--error"><i class="pi pi-times-circle"></i> {{ receipt.error }}
+                      <button pButton label="Asignar manualmente" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
+                    </div>
+                  } @else if (receipt.status === 'confirming') {
+                    <div class="receipt-state"><i class="pi pi-spin pi-cloud-upload"></i> Subiendo al bucket y registrando pago…</div>
+                  } @else if (receipt.status === 'confirmed') {
+                    <div class="receipt-state receipt-state--success"><i class="pi pi-check-circle"></i> Comprobante subido y pago registrado.</div>
+                  } @else {
+                    <div class="receipt-result">
+                      <div class="ocr-data">
+                        <span><i class="pi pi-user"></i> {{ receipt.scan?.extractedData?.sender_name || 'Remitente no detectado' }}</span>
+                        <span><i class="pi pi-building-columns"></i> {{ receipt.scan?.extractedData?.bank || 'Banco no detectado' }}</span>
+                        @if (ocrConfidence(receipt) !== null) {
+                          <span>Confianza: {{ ((ocrConfidence(receipt) ?? 0) * 100) | number:'1.0-0' }}%</span>
+                        }
+                      </div>
+
+                      @if (receipt.showManualAssignment) {
+                        <div class="receipt-match manual-assignment">
+                          <div class="manual-heading">
+                            <span class="manual-step">Asignación manual</span>
+                            <strong>Define el destino del comprobante</strong>
+                            <span>El archivo seguirá sin subir hasta que confirmes estos datos.</span>
+                          </div>
+                          <div class="manual-step-grid">
+                            <label class="manual-field"><span>1. Período</span><select [(ngModel)]="receipt.manualPeriodId" (ngModelChange)="onManualPeriodSelected(receipt)">
+                              <option [ngValue]="undefined">Selecciona el período</option>
+                              @for (manualPeriod of manualPeriods; track manualPeriod.id) {
+                                <option [value]="manualPeriod.id">{{ periodLabel(manualPeriod) }}</option>
+                              }
+                            </select></label>
+                            @if (receipt.manualPeriod) {
+                              <label class="manual-field"><span>2. Departamento</span><select [(ngModel)]="receipt.manualPaymentId" (ngModelChange)="onManualPaymentSelected(receipt)">
+                                <option [ngValue]="undefined">Selecciona el departamento</option>
+                                @for (payment of receipt.manualPeriod.payments || []; track payment.id) {
+                                  <option [value]="payment.id" [disabled]="payment.status === 'PAID'">{{ payment.owner?.apartmentNumber }} — {{ payment.owner?.fullName }}</option>
+                                }
+                              </select></label>
+                            }
+                          </div>
+                          @if (loadingManualPeriods) { <small class="text-color-secondary"><i class="pi pi-spin pi-spinner"></i> Cargando períodos…</small> }
+                          @if (receipt.manualMatch && receipt.manualPeriod) {
+                            <div class="receipt-destination">
+                              <span class="destination-label"><i class="pi pi-map-marker"></i> Se registrará en</span>
+                              <strong>{{ periodLabel(receipt.manualPeriod) }} · Depto. {{ receipt.manualMatch.owner.apartmentNumber }}</strong>
+                              <span>{{ receipt.manualMatch.owner.fullName }} · Saldo pendiente: {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+                            </div>
+                            <div class="manual-confirm-grid">
+                              <label class="manual-field"><span>3. Valor del comprobante</span><p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" inputStyleClass="text-right" /></label>
+                              <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
+                              <button pButton icon="pi pi-check" label="Confirmar registro" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
+                            </div>
+                            @if (!isReceiptDateInPeriod(receipt)) { <small class="receipt-warning">La fecha debe pertenecer al período seleccionado.</small> }
+                          }
+                        </div>
+                      } @else if (receipt.match) {
+                        <div class="receipt-match">
+                          <div class="receipt-destination">
+                            <span class="destination-label"><i class="pi pi-map-marker"></i> Destino detectado</span>
+                            <strong>{{ periodLabel(period) }} · Depto. {{ receipt.match.owner.apartmentNumber }}</strong>
+                            <span>{{ receipt.match.owner.fullName }} · Alícuota {{ receipt.match.aliquotAmount | currency:'USD':'symbol-narrow':'1.2-2' }} · Pendiente {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+                          </div>
+                          @if (receipt.match.paymentStatus === 'PAID') {
+                            <span class="receipt-warning"><i class="pi pi-info-circle"></i> Esta alícuota ya está pagada.</span>
+                          } @else {
+                            <div class="receipt-values">
+                              <p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" placeholder="Valor detectado" inputStyleClass="text-right" />
+                              <input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" class="receipt-date" />
+                              @if (!receipt.amount) {
+                                <small class="receipt-warning">OCR no detectó el valor: ingrésalo para confirmar.</small>
+                              } @else if (!isReceiptDateInPeriod(receipt)) {
+                                <small class="receipt-warning">La fecha debe pertenecer a {{ monthName }} {{ period.year }}.</small>
+                              }
+                              <button pButton icon="pi pi-check" [label]="'Confirmar ' + receipt.match.owner.apartmentNumber" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
+                            </div>
+                          }
+                        </div>
+                      } @else if ((receipt.scan?.matches?.length || 0) > 1) {
+                        <div class="receipt-warning"><i class="pi pi-exclamation-triangle"></i> Hay más de un propietario con ese nombre; confirma el pago manualmente.</div>
+                      } @else {
+                        <div class="receipt-warning"><i class="pi pi-exclamation-triangle"></i> No se encontró un propietario que coincida con el remitente OCR.</div>
+                      }
+                      @if (!receipt.showManualAssignment) {
+                        <button pButton label="Asignar manualmente" icon="pi pi-pencil" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
+                      }
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+          }
+        </div>
       }
     </p-dialog>
 
@@ -184,7 +372,7 @@
                 <!-- Fila en edición -->
                 <div class="extra-edit-row">
                   <p-inputNumber [(ngModel)]="editExtraAmount" [min]="0.01" [minFractionDigits]="2"
-                    prefix="\$" styleClass="w-7rem" inputStyleClass="text-right" />
+                    prefix="$" styleClass="w-7rem" inputStyleClass="text-right" />
                   <input pInputText [(ngModel)]="editExtraNotes" class="flex-1"
                     placeholder="Concepto..." />
                   <button pButton icon="pi pi-check" [text]="true" [rounded]="true" severity="success"
@@ -195,7 +383,7 @@
               } @else {
                 <!-- Fila de visualización -->
                 <div class="extra-item-row">
-                  <span class="extra-item-amount">\${{ extra.amount | number:'1.2-2' }}</span>
+                  <span class="extra-item-amount">${{ extra.amount | number:'1.2-2' }}</span>
                   <span class="extra-item-notes flex-1">{{ extra.notes }}</span>
                   @if (selectedPayment.status !== 'PAID') {
                     <button pButton icon="pi pi-pencil" [text]="true" [rounded]="true" size="small"
@@ -210,7 +398,7 @@
           </div>
           <div class="extras-subtotal">
             <span>Subtotal extras:</span>
-            <strong>\${{ selectedPayment.extrasTotal | number:'1.2-2' }}</strong>
+            <strong>${{ selectedPayment.extrasTotal | number:'1.2-2' }}</strong>
           </div>
         } @else {
           <p class="text-color-secondary text-sm mt-2">Sin cargos extras aún.</p>
@@ -222,7 +410,7 @@
             <h4 class="extra-add-title"><i class="pi pi-plus-circle mr-1"></i>Nuevo cargo</h4>
             <div class="extra-add-row">
               <p-inputNumber [(ngModel)]="newExtraAmount" [min]="0.01" [minFractionDigits]="2"
-                prefix="\$" placeholder="Monto" inputStyleClass="text-right" />
+                prefix="$" placeholder="Monto" inputStyleClass="text-right" />
               <input pInputText [(ngModel)]="newExtraNotes" class=""
                 placeholder="Concepto (requerido)" />
               <button pButton icon="pi pi-check" label="Agregar"

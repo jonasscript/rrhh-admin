@@ -37,3 +37,13 @@
     .current-proof { background: #eff6ff; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; }
     .proof-info { margin-bottom: .5rem; }
     .delete-proof { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid #e5e7eb; }
+    .mora-application { display: flex; gap: .65rem; align-items: flex-start; margin: -.25rem 0 1rem; padding: .75rem; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; color: #9a3412; font-size: .85rem; }
+    .mora-application > i { margin-top: .15rem; }
+    .mora-application div { display: flex; flex-direction: column; gap: .2rem; }
+    .mora-application small { color: #b91c1c; }
+    .period-closing-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); }
+    .period-closing-card { width: min(420px, 100%); padding: 2rem; text-align: center; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(0,0,0,.25); }
+    .period-closing-card > i { font-size: 2.5rem; color: #2563eb; }
+    .period-closing-card h3 { margin: 1rem 0 .6rem; color: #1e3a5f; }
+    .period-closing-card p { margin: 0; color: #475569; line-height: 1.5; }
+    .period-closing-card span { display: block; margin-top: 1rem; color: #64748b; font-size: .85rem; }

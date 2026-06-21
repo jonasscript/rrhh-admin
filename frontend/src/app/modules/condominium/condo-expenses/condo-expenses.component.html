@@ -17,7 +17,7 @@
       <div class="summary-icon"><i class="pi pi-lock"></i></div>
       <div class="summary-body">
         <span class="summary-label">Total gastos fijos activos</span>
-        <span class="summary-value">{{ data.totalFixed | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-value">{{ data.totalFixed | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         <span class="summary-sub">{{ fixedItems.length }} ítems</span>
       </div>
     </div>
@@ -25,7 +25,7 @@
       <div class="summary-icon"><i class="pi pi-sliders-h"></i></div>
       <div class="summary-body">
         <span class="summary-label">Total gastos variables activos</span>
-        <span class="summary-value">{{ data.totalVariable | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-value">{{ data.totalVariable | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         <span class="summary-sub">{{ variableItems.length }} ítems</span>
       </div>
     </div>
@@ -33,7 +33,7 @@
       <div class="summary-icon"><i class="pi pi-calculator"></i></div>
       <div class="summary-body">
         <span class="summary-label">Base para alícuotas</span>
-        <span class="summary-value">{{ activeRecurringTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span class="summary-value">{{ activeRecurringTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         <span class="summary-sub">Ítems activos y recurrentes</span>
       </div>
     </div>
@@ -81,7 +81,7 @@
         <td>
           <p-tag [value]="typeLabel(item.expenseType)" [severity]="typeSeverity(item.expenseType)" />
         </td>
-        <td class="amount-cell">{{ item.amount | currency:'USD':'symbol':'1.2-2' }}</td>
+        <td class="amount-cell">{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
         <td class="center-cell">
           @if (item.isRecurring) {
             <i class="pi pi-check-circle text-green-500" pTooltip="Se incluye automáticamente en nuevos períodos"></i>
@@ -124,7 +124,7 @@
     <ng-template pTemplate="footer">
       <tr class="footer-total">
         <td colspan="3"><strong>Total activo recurrente</strong></td>
-        <td class="amount-cell"><strong>{{ activeRecurringTotal | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+        <td class="amount-cell"><strong>{{ activeRecurringTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
         <td colspan="3"></td>
       </tr>
     </ng-template>

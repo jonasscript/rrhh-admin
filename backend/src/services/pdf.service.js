@@ -98,7 +98,7 @@ const generateAliquotPdf = (payment) =>
     doc.on('error', reject);
 
     const monthName = MONTHS_ES[payment.month];
-    const total     = parseFloat(payment.aliquot_amount) + parseFloat(payment.mora_at_billing);
+    const total     = parseFloat(payment.aliquot_amount);
 
     doc.fontSize(16).fillColor('#1e40af').text('COMPROBANTE DE ALÍCUOTA', { align: 'center' });
     doc.fontSize(11).fillColor('#334155').text(`${monthName} ${payment.year}`, { align: 'center' });
@@ -113,9 +113,6 @@ const generateAliquotPdf = (payment) =>
     doc.moveDown(0.5);
 
     row(doc, 'Alícuota del período', fmt(payment.aliquot_amount));
-    if (parseFloat(payment.mora_at_billing) > 0)
-      row(doc, 'Mora pendiente',  fmt(payment.mora_at_billing));
-
     doc.moveTo(40, doc.y).lineTo(395, doc.y).stroke('#1e40af');
     doc.moveDown(0.3);
     doc.fontSize(13).fillColor('#1e40af');

@@ -17,7 +17,7 @@
             <div class="fund-info">
               <span class="fund-label">{{ prov.name }}</span>
               <span class="fund-balance">
-                {{ (getFacet(prov.id)?.balance ?? 0) | currency:'USD':'symbol':'1.2-2' }}
+                {{ (getFacet(prov.id)?.balance ?? 0) | currency:'USD':'symbol-narrow':'1.2-2' }}
               </span>
               <span class="fund-hint">
                 @if (prov.calc_type === 'PERCENTAGE') { {{ prov.value }}% sobre gastos del período }
@@ -57,9 +57,9 @@
                 <td><p-tag [value]="entryTypeLabel(e.entry_type)" [severity]="entryTypeSeverity(e.entry_type)" /></td>
                 <td>{{ e.description }}</td>
                 <td [class]="e.amount >= 0 ? 'text-right text-green-600' : 'text-right text-red-500'">
-                  {{ e.amount | currency:'USD':'symbol':'1.2-2' }}
+                  {{ e.amount | currency:'USD':'symbol-narrow':'1.2-2' }}
                 </td>
-                <td class="text-right"><strong>{{ e.running_balance | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+                <td class="text-right"><strong>{{ e.running_balance | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
               </tr>
             </ng-template>
             <ng-template pTemplate="emptymessage">

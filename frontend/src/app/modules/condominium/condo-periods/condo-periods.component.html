@@ -16,15 +16,15 @@
         <th>Total general</th>
         <th>Pagos</th>
         <th>Estado</th>
-        <th style="width:110px">Acciones</th>
+        <th style="width:150px">Acciones</th>
       </tr>
     </ng-template>
     <ng-template pTemplate="body" let-p>
       <tr>
         <td><strong>{{ monthName(p.month) }} {{ p.year }}</strong></td>
-        <td>{{ p.total_expenses | currency:'USD':'symbol':'1.2-2' }}</td>
-        <td class="text-color-secondary">{{ p.total_provisions | currency:'USD':'symbol':'1.2-2' }}</td>
-        <td><strong>{{ effectiveTotal(p) | currency:'USD':'symbol':'1.2-2' }}</strong></td>
+        <td>{{ p.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+        <td class="text-color-secondary">{{ p.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+        <td><strong>{{ effectiveTotal(p) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
         <td class="text-center">
           <span class="payments-pill">{{ p.paid_count || 0 }} / {{ p.total_payments || 0 }}</span>
         </td>
@@ -32,6 +32,10 @@
         <td class="text-center">
           <button pButton icon="pi pi-eye" [rounded]="true" [text]="true"
             [routerLink]="['/condominium/periods', p.id]" pTooltip="Ver detalle"></button>
+          @if (p.status !== 'CLOSED') {
+            <button pButton icon="pi pi-images" [rounded]="true" [text]="true" severity="info"
+              (click)="openBulkUpload(p)" pTooltip="Cargar comprobantes" [disabled]="loadingBulkPeriod"></button>
+          }
           @if (p.status !== 'CLOSED') {
             <button pButton icon="pi pi-trash" [rounded]="true" [text]="true" severity="danger"
               (click)="confirmDelete(p)" pTooltip="Eliminar período" [disabled]="deleting"></button>
@@ -129,7 +133,7 @@
               <!-- Fijo: monto de solo lectura | Variable: monto editable -->
               @if (item.expenseType === 'FIXED') {
                 <span class="amount-fixed" [class.amount-dim]="!item.selected">
-                  {{ item.amount | currency:'USD':'symbol':'1.2-2' }}
+                  {{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}
                 </span>
               } @else {
                 <p-inputNumber
@@ -238,9 +242,9 @@
               } @else {
                 <span class="amount-fixed" [class.amount-dim]="!p.selected">
                   @if (p.calc_type === 'PERCENTAGE') {
-                    {{ (grandTotal * p.value / 100) | currency:'USD':'symbol':'1.2-2' }}
+                    {{ (grandTotal * p.value / 100) | currency:'USD':'symbol-narrow':'1.2-2' }}
                   } @else {
-                    {{ p.value | currency:'USD':'symbol':'1.2-2' }}
+                    {{ p.value | currency:'USD':'symbol-narrow':'1.2-2' }}
                   }
                 </span>
               }
@@ -254,28 +258,28 @@
     <div class="period-summary">
       <div class="summary-row">
         <span><i class="pi pi-lock mr-1"></i>Gastos fijos</span>
-        <span>{{ fixedTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span>{{ fixedTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
       </div>
       <div class="summary-row">
         <span><i class="pi pi-sliders-h mr-1"></i>Gastos variables</span>
-        <span>{{ variableTotal | currency:'USD':'symbol':'1.2-2' }}</span>
+        <span>{{ variableTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
       </div>
       @if (totalProvisions > 0) {
         <p-divider styleClass="my-1" />
         @for (prov of provisionBreakdown; track prov.name) {
           <div class="summary-row summary-provision">
             <span><i class="pi pi-shield mr-1"></i>{{ prov.name }}</span>
-            <span>{{ prov.amount | currency:'USD':'symbol':'1.2-2' }}</span>
+            <span>{{ prov.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
           </div>
         }
         <div class="summary-row">
           <span>Subtotal provisiones</span>
-          <span>{{ totalProvisions | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span>{{ totalProvisions | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       }
       <div class="summary-row summary-total">
         <strong>Total general del período</strong>
-        <strong>{{ grandTotalWithProvisions | currency:'USD':'symbol':'1.2-2' }}</strong>
+        <strong>{{ grandTotalWithProvisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
       </div>
     </div>
 
@@ -289,3 +293,143 @@
   </ng-template>
 </p-dialog>
 
+<!-- ── Carga masiva + OCR ───────────────────────────────── -->
+<p-dialog
+  [(visible)]="showBulkUpload"
+  [header]="bulkPeriod ? 'Comprobantes — ' + monthName(bulkPeriod.month) + ' ' + bulkPeriod.year : 'Comprobantes'"
+  [modal]="true"
+  [style]="{ width: '900px', maxWidth: '96vw' }"
+  [draggable]="false"
+>
+  @if (bulkPeriod) {
+    <div class="bulk-upload">
+      <div class="bulk-intro">
+        <div>
+          <strong>Lectura y registro asistido</strong>
+          <p>Los archivos se leen uno por uno. Tras confirmar la coincidencia, el comprobante se sube al bucket y su valor se registra en la alícuota de este período.</p>
+        </div>
+        <label for="bulk-receipts" class="p-button p-component">
+          <i class="pi pi-upload p-button-icon p-button-icon-left"></i>
+          <span class="p-button-label">Agregar comprobantes</span>
+        </label>
+        <input id="bulk-receipts" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
+          class="hidden-file-input" (change)="onBulkFilesSelected($event)" />
+      </div>
+
+      @if (bulkProcessing) {
+        <div class="bulk-processing"><i class="pi pi-spin pi-spinner"></i> Leyendo comprobantes con OCR, uno a la vez…</div>
+      }
+
+      @if (bulkReceipts.length === 0) {
+        <div class="bulk-empty"><i class="pi pi-images"></i><span>Selecciona uno o varios JPG, PNG, WEBP o PDF.</span></div>
+      } @else {
+        <div class="receipt-list">
+          @for (receipt of bulkReceipts; track receipt.file.name + receipt.file.lastModified) {
+            <article class="receipt-card" [class.receipt-card--error]="receipt.status === 'error'" [class.receipt-card--done]="receipt.status === 'confirmed'">
+              <div class="receipt-file">
+                <i class="pi" [class.pi-file]="receipt.status !== 'confirmed'" [class.pi-check-circle]="receipt.status === 'confirmed'"></i>
+                <div>
+                  <strong>{{ receipt.file.name }}</strong>
+                  <small>{{ (receipt.file.size / 1024).toFixed(1) }} KB</small>
+                </div>
+              </div>
+
+              @if (receipt.status === 'queued' || receipt.status === 'scanning') {
+                <div class="receipt-state"><i class="pi pi-spin pi-spinner"></i> Leyendo OCR…</div>
+              } @else if (receipt.status === 'error') {
+                <div class="receipt-state receipt-state--error"><i class="pi pi-times-circle"></i> {{ receipt.error }}
+                  <button pButton label="Asignar manualmente" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
+                </div>
+              } @else if (receipt.status === 'confirming') {
+                <div class="receipt-state"><i class="pi pi-spin pi-cloud-upload"></i> Subiendo al bucket y registrando pago…</div>
+              } @else if (receipt.status === 'confirmed') {
+                <div class="receipt-state receipt-state--success"><i class="pi pi-check-circle"></i> Comprobante subido y pago registrado.</div>
+              } @else {
+                <div class="receipt-result">
+                  <div class="ocr-data">
+                    <span><i class="pi pi-user"></i> {{ receipt.scan?.extractedData?.sender_name || 'Remitente no detectado' }}</span>
+                    <span><i class="pi pi-building-columns"></i> {{ receipt.scan?.extractedData?.bank || 'Banco no detectado' }}</span>
+                    @if (ocrConfidence(receipt) !== null) {
+                      <span>Confianza: {{ ((ocrConfidence(receipt) ?? 0) * 100) | number:'1.0-0' }}%</span>
+                    }
+                  </div>
+
+                  @if (receipt.showManualAssignment) {
+                    <div class="receipt-match manual-assignment">
+                      <div class="manual-heading">
+                        <span class="manual-step">Asignación manual</span>
+                        <strong>Define el destino del comprobante</strong>
+                        <span>El archivo seguirá sin subir hasta que confirmes estos datos.</span>
+                      </div>
+                      <div class="manual-step-grid">
+                        <label class="manual-field"><span>1. Período</span><select [(ngModel)]="receipt.manualPeriodId" (ngModelChange)="onManualPeriodSelected(receipt)">
+                          <option [ngValue]="undefined">Selecciona el período</option>
+                          @for (manualPeriod of manualPeriods; track manualPeriod.id) {
+                            <option [value]="manualPeriod.id">{{ monthName(manualPeriod.month) }} {{ manualPeriod.year }}</option>
+                          }
+                        </select></label>
+                        @if (receipt.manualPeriod) {
+                          <label class="manual-field"><span>2. Departamento</span><select [(ngModel)]="receipt.manualPaymentId" (ngModelChange)="onManualPaymentSelected(receipt)">
+                            <option [ngValue]="undefined">Selecciona el departamento</option>
+                            @for (payment of receipt.manualPeriod.payments || []; track payment.id) {
+                              <option [value]="payment.id" [disabled]="payment.status === 'PAID'">{{ payment.owner?.apartmentNumber }} — {{ payment.owner?.fullName }}</option>
+                            }
+                          </select></label>
+                        }
+                      </div>
+                      @if (loadingManualPeriods) { <small class="text-color-secondary"><i class="pi pi-spin pi-spinner"></i> Cargando períodos…</small> }
+                      @if (receipt.manualMatch && receipt.manualPeriod) {
+                        <div class="receipt-destination">
+                          <span class="destination-label"><i class="pi pi-map-marker"></i> Se registrará en</span>
+                          <strong>{{ monthName(receipt.manualPeriod.month) }} {{ receipt.manualPeriod.year }} · Depto. {{ receipt.manualMatch.owner.apartmentNumber }}</strong>
+                          <span>{{ receipt.manualMatch.owner.fullName }} · Saldo pendiente: {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+                        </div>
+                        <div class="manual-confirm-grid">
+                          <label class="manual-field"><span>3. Valor del comprobante</span><p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" inputStyleClass="text-right" /></label>
+                          <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
+                          <button pButton icon="pi pi-check" label="Confirmar registro" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
+                        </div>
+                        @if (!isReceiptDateInPeriod(receipt)) { <small class="receipt-warning">La fecha debe pertenecer al período seleccionado.</small> }
+                      }
+                    </div>
+                  } @else if (receipt.match) {
+                    <div class="receipt-match">
+                      <div class="receipt-destination">
+                        <span class="destination-label"><i class="pi pi-map-marker"></i> Destino detectado</span>
+                        <strong>{{ monthName(bulkPeriod.month) }} {{ bulkPeriod.year }} · Depto. {{ receipt.match.owner.apartmentNumber }}</strong>
+                        <span>{{ receipt.match.owner.fullName }} · Alícuota {{ receipt.match.aliquotAmount | currency:'USD':'symbol-narrow':'1.2-2' }} · Pendiente {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+                      </div>
+                      @if (receipt.match.paymentStatus === 'PAID') {
+                        <span class="receipt-warning"><i class="pi pi-info-circle"></i> Esta alícuota ya está pagada.</span>
+                      } @else {
+                        <div class="receipt-values">
+                          <p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2"
+                            prefix="$" placeholder="Valor detectado" inputStyleClass="text-right" />
+                          <input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" class="receipt-date" />
+                          @if (!receipt.amount) {
+                            <small class="receipt-warning">OCR no detectó el valor: ingrésalo para confirmar.</small>
+                          } @else if (!isReceiptDateInPeriod(receipt)) {
+                            <small class="receipt-warning">La fecha debe pertenecer a {{ monthName(bulkPeriod.month) }} {{ bulkPeriod.year }}.</small>
+                          }
+                          <button pButton icon="pi pi-check" [label]="'Confirmar ' + receipt.match.owner.apartmentNumber"
+                            [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
+                        </div>
+                      }
+                    </div>
+                  } @else if ((receipt.scan?.matches?.length || 0) > 1) {
+                    <div class="receipt-warning"><i class="pi pi-exclamation-triangle"></i> Hay más de un propietario con ese nombre; confirma el pago manualmente.</div>
+                  } @else {
+                    <div class="receipt-warning"><i class="pi pi-exclamation-triangle"></i> No se encontró un propietario que coincida con el remitente OCR.</div>
+                  }
+                  @if (!receipt.showManualAssignment) {
+                    <button pButton label="Asignar manualmente" icon="pi pi-pencil" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
+                  }
+                </div>
+              }
+            </article>
+          }
+        </div>
+      }
+    </div>
+  }
+</p-dialog>

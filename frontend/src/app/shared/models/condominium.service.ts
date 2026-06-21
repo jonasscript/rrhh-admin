@@ -4,7 +4,7 @@ import { ApiService } from '../../core/services/api.service';
 import {
   AliquotPayment, BalanceReport, CondoConfig, CondoExpenseItem, CondoExpenseItemsResponse,
   CondoExpensePeriod, CondoFundEntry, CondoFundSummary, CondoOwner, CondoPeriodExpenseItem,
-  PaymentExtra, ProvisionCatalogItem,
+  OcrScanResult, PaymentExtra, ProvisionCatalogItem,
 } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
@@ -66,13 +66,46 @@ export class CondominiumService extends ApiService {
   getPayment(id: string): Observable<AliquotPayment> { return this.get(`/condominium/payments/${id}`); }
 
   registerPayment(id: string, data: { amountPaid: number; paymentDate: string; paymentMonth: string; notes?: string }): Observable<AliquotPayment> {
-    return this.patch(`/condominium/payments/${id}/register`, data);
+    return this.post(`/condominium/payments/${id}/register`, {
+      paidAmount: data.amountPaid,
+      paymentDate: data.paymentDate,
+      notes: data.notes,
+    });
   }
 
-  uploadProof(paymentId: string, file: File): Observable<AliquotPayment> {
+  uploadProof(paymentId: string, file: File, moraPaymentRecordIds?: string[]): Observable<AliquotPayment> {
     const formData = new FormData();
-    formData.append('proof', file);
+    formData.append('file', file);
+    if (moraPaymentRecordIds?.length) formData.append('moraPaymentRecordIds', JSON.stringify(moraPaymentRecordIds));
     return this.postFormData(`/condominium/payments/${paymentId}/proof`, formData);
+  }
+
+  registerMoraPayment(ownerId: string, file: File, data: { amount: number; paymentDate: string; notes?: string }): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('amount', String(data.amount));
+    formData.append('paymentDate', data.paymentDate);
+    if (data.notes) formData.append('notes', data.notes);
+    return this.postFormData(`/condominium/owners/${ownerId}/mora/payments`, formData);
+  }
+
+  scanPaymentProof(file: File, periodId: string): Observable<OcrScanResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('periodId', periodId);
+    return this.postFormData('/condominium/ocr/scan', formData);
+  }
+
+  confirmOcrPayment(paymentId: string, file: File, data: {
+    amount: number; paymentDate: string; ocrSenderName?: string | null; ocrBank?: string | null;
+  }): Observable<AliquotPayment> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('amount', String(data.amount));
+    formData.append('paymentDate', data.paymentDate);
+    if (data.ocrSenderName) formData.append('ocrSenderName', data.ocrSenderName);
+    if (data.ocrBank) formData.append('ocrBank', data.ocrBank);
+    return this.postFormData(`/condominium/payments/${paymentId}/ocr-confirm`, formData);
   }
 
   deleteProof(paymentId: string): Observable<AliquotPayment> {

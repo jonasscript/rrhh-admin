@@ -63,7 +63,7 @@ interface NavItem {
     </nav>
   `,
   styles: [`
-    .sidebar { width: 240px; min-height: 100vh; background: #1e3a5f; color: white; display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar { width: 240px; height: 100vh; position: sticky; top: 0; overflow-y: auto; background: #1e3a5f; color: white; display: flex; flex-direction: column; flex-shrink: 0; }
     .sidebar-header { padding: 1.5rem 1rem; border-bottom: 1px solid rgba(255,255,255,.1); }
     .sidebar-logo { font-size: 1.4rem; font-weight: 700; letter-spacing: 1px; }
     .sidebar-logo .accent { color: #60a5fa; }

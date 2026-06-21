@@ -553,6 +553,40 @@ DO $$ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
+-- CONDOMINIO — HISTORIAL DE ABONOS A MORA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mora_payment_records (
+  id                 VARCHAR(36)   NOT NULL PRIMARY KEY,
+  -- Sin FK para permitir aplicar este bloque en servidores donde el rol de
+  -- despliegue no posee REFERENCES sobre tablas creadas por otro propietario.
+  -- Las rutas backend validan propietario y pago antes de insertar.
+  owner_id           VARCHAR(36)   NOT NULL,
+  -- Pago vencido cuyo saldo se cubrió con este abono. Se mantiene sin FK
+  -- por compatibilidad con roles de despliegue sin permiso REFERENCES.
+  debt_payment_id    VARCHAR(36),
+  aliquot_payment_id VARCHAR(36),
+  amount             NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  payment_date       DATE          NOT NULL,
+  payment_type       VARCHAR(20)   NOT NULL CHECK (payment_type IN ('ALIQUOT_EXCESS', 'DIRECT')),
+  proof_url          TEXT,
+  proof_public_id    TEXT,
+  notes              TEXT,
+  registered_by      VARCHAR(36),
+  created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  ALTER TABLE mora_payment_records ADD COLUMN IF NOT EXISTS debt_payment_id VARCHAR(36);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_mora_payment_records_owner ON mora_payment_records(owner_id, payment_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_mora_payment_records_aliquot ON mora_payment_records(aliquot_payment_id);
+  CREATE INDEX IF NOT EXISTS idx_mora_payment_records_debt ON mora_payment_records(debt_payment_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
 -- CONDOMINIO — EXTRAS POR PAGO DE ALÍCUOTA
 -- ============================================================
 

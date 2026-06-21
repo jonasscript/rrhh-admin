@@ -11,6 +11,7 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../../services/clo
 const { sendAliquotEmail }   = require('../../services/email.service');
 const { generateAliquotPdf, generateBalancePdf } = require('../../services/pdf.service');
 const { newId }  = require('../../utils/id');
+const config     = require('../../config/config');
 
 // Multer en memoria solo para la importación de Excel (sin Cloudinary)
 const uploadExcel = multer({
@@ -25,6 +26,90 @@ const uploadExcel = multer({
 
 const router = Router();
 router.use(authenticate);
+
+const OCR_IGNORED_NAME_WORDS = new Set(['DEL', 'DE', 'LA', 'LAS', 'LOS', 'Y', 'EL']);
+
+function nameTokens(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(token => token.length >= 3 && !OCR_IGNORED_NAME_WORDS.has(token));
+}
+
+function findOwnerMatches(senderName, payments) {
+  const senderTokens = new Set(nameTokens(senderName));
+  if (!senderTokens.size) return [];
+  return payments.filter(payment => nameTokens(payment.ownerName).some(token => senderTokens.has(token)));
+}
+
+// Aplica un abono a mora siguiendo FIFO: primero el período vencido más
+// antiguo. Cada tramo queda auditado y enlazado a la alícuota que lo originó.
+async function applyMoraPayment(client, {
+  ownerId, amount, paymentDate, paymentType, sourceAliquotPaymentId = null,
+  proofUrl = null, proofPublicId = null, notes = null, registeredBy,
+}) {
+  const debtsRes = await client.query(
+    `SELECT ap.id, ap.aliquot_amount::float AS aliquot_amount, ap.paid_amount::float AS paid_amount,
+            (ap.aliquot_amount + COALESCE((
+              SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+            ), 0))::float AS period_due
+     FROM aliquot_payments ap
+     JOIN condo_expense_periods cep ON cep.id = ap.period_id
+     WHERE ap.owner_id = $1 AND ap.status = 'OVERDUE'
+     ORDER BY cep.year ASC, cep.month ASC
+     FOR UPDATE OF ap`,
+    [ownerId]
+  );
+
+  let remaining = amount;
+  const recordIds = [];
+  for (const debt of debtsRes.rows) {
+    const pending = Math.max(0, debt.period_due - debt.paid_amount);
+    if (pending <= 0.01 || remaining <= 0.01) continue;
+
+    const applied = Math.min(remaining, pending);
+    const newPaid = debt.paid_amount + applied;
+    const debtStatus = newPaid >= debt.period_due - 0.01 ? 'PAID' : 'OVERDUE';
+    await client.query(
+      'UPDATE aliquot_payments SET paid_amount = $1, status = $2 WHERE id = $3',
+      [newPaid, debtStatus, debt.id]
+    );
+
+    const recordId = newId();
+    await client.query(
+      `INSERT INTO mora_payment_records
+         (id, owner_id, debt_payment_id, aliquot_payment_id, amount, payment_date, payment_type,
+          proof_url, proof_public_id, notes, registered_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [recordId, ownerId, debt.id, sourceAliquotPaymentId, applied, paymentDate, paymentType,
+       proofUrl, proofPublicId, notes, registeredBy]
+    );
+    recordIds.push(recordId);
+    remaining -= applied;
+  }
+
+  // Puede existir mora ajustada manualmente y sin período fuente. Se conserva
+  // el abono, explícitamente marcado como tal, en lugar de perder trazabilidad.
+  if (remaining > 0.01) {
+    const recordId = newId();
+    await client.query(
+      `INSERT INTO mora_payment_records
+         (id, owner_id, debt_payment_id, aliquot_payment_id, amount, payment_date, payment_type,
+          proof_url, proof_public_id, notes, registered_by)
+       VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [recordId, ownerId, sourceAliquotPaymentId, remaining, paymentDate, paymentType,
+       proofUrl, proofPublicId, [notes, 'Abono a mora sin período asociado'].filter(Boolean).join(' — '), registeredBy]
+    );
+    recordIds.push(recordId);
+  }
+
+  await client.query(
+    'UPDATE condo_owners SET mora_amount = GREATEST(0, mora_amount - $1) WHERE id = $2',
+    [amount, ownerId]
+  );
+  return recordIds;
+}
 
 // Columnas camelCase reutilizables en todos los SELECT / RETURNING de propietarios
 const OWNER_COLS = `
@@ -475,6 +560,122 @@ router.patch('/owners/:id/mora', authorize('ADMIN'), async (req, res) => {
   success(res, rows[0], 200, `Mora ajustada (${operation} ${amount})`);
 });
 
+// POST /condominium/owners/:id/mora/payments — abono directo a mora con comprobante
+router.post('/owners/:id/mora/payments', authorize('ADMIN'), uploadSingle, async (req, res) => {
+  if (!req.file) throw new AppError('Comprobante requerido', 400);
+  const data = z.object({
+    amount:      z.coerce.number().positive(),
+    paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida'),
+    notes:       z.string().max(500).optional(),
+  }).parse(req.body);
+
+  const ownerRes = await query('SELECT * FROM condo_owners WHERE id = $1', [req.params.id]);
+  const owner = ownerRes.rows[0];
+  if (!owner) throw new AppError('Propietario no encontrado', 404);
+  const currentMora = parseFloat(owner.mora_amount);
+  if (data.amount > currentMora + 0.01) {
+    throw new AppError(`El abono excede la mora disponible de $${currentMora.toFixed(2)}`, 400);
+  }
+
+  const folder = `rrhh-admin/condominio/comprobantes/mora/${data.paymentDate.slice(0, 7)}`;
+  const { url, publicId } = await uploadToCloudinary(req.file.buffer, folder, req.file.mimetype);
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const recordIds = await applyMoraPayment(client, {
+      ownerId: owner.id, amount: data.amount, paymentDate: data.paymentDate,
+      paymentType: 'DIRECT', proofUrl: url, proofPublicId: publicId,
+      notes: data.notes || null, registeredBy: req.user.id,
+    });
+    const ownerUpdate = await client.query(
+      `SELECT ${OWNER_COLS} FROM condo_owners WHERE id = $1`, [owner.id]
+    );
+    await client.query('COMMIT');
+    success(res, { owner: ownerUpdate.rows[0], recordIds }, 201, 'Abono a mora registrado');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    try { await deleteFromCloudinary(publicId); } catch (_) { /* best-effort */ }
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// ── OCR de comprobantes ────────────────────────────────────────
+
+// POST /condominium/ocr/scan
+// Recibe el archivo desde la web y lo reenvía al servicio OCR. Así el
+// navegador no necesita conocer ni tener acceso a una segunda URL base.
+router.post('/ocr/scan', authorize('ADMIN'), uploadSingle, async (req, res) => {
+  if (!req.file) throw new AppError('Archivo requerido', 400);
+
+  const form = new FormData();
+  form.append(
+    'file',
+    new Blob([req.file.buffer], { type: req.file.mimetype }),
+    req.file.originalname
+  );
+
+  let ocrResponse;
+  try {
+    ocrResponse = await fetch(config.ocr.scanUrl, { method: 'POST', body: form });
+  } catch (_) {
+    throw new AppError('No fue posible conectar con el servicio OCR', 502);
+  }
+
+  let ocrResult;
+  try {
+    ocrResult = await ocrResponse.json();
+  } catch (_) {
+    throw new AppError('El servicio OCR devolvió una respuesta inválida', 502);
+  }
+  if (!ocrResponse.ok || !ocrResult.success) {
+    throw new AppError(ocrResult.error || 'No se pudo leer el comprobante', 422);
+  }
+
+  const extractedData = ocrResult.extracted_data || {};
+  let matches = [];
+
+  // El período es opcional para conservar un endpoint OCR reutilizable. Al
+  // recibirlo, la respuesta ya incluye el pago del período que puede confirmarse.
+  if (req.body.periodId) {
+    const { rows } = await query(
+      `SELECT ap.id AS "paymentId", ap.status AS "paymentStatus",
+              ap.aliquot_amount::float AS "aliquotAmount",
+              ap.mora_at_billing::float AS "moraAtBilling",
+              ap.paid_amount::float AS "amountPaid",
+              (ap.aliquot_amount + COALESCE((
+                SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+              ), 0))::float AS "totalDue",
+              o.id AS "ownerId", o.name AS "ownerName", o.unit_number AS "apartmentNumber"
+       FROM aliquot_payments ap
+       JOIN condo_owners o ON o.id = ap.owner_id
+       WHERE ap.period_id = $1
+       ORDER BY o.unit_number`,
+      [req.body.periodId]
+    );
+    matches = findOwnerMatches(extractedData.sender_name, rows).map(row => ({
+      paymentId: row.paymentId,
+      paymentStatus: row.paymentStatus,
+      aliquotAmount: row.aliquotAmount,
+      moraAtBilling: row.moraAtBilling,
+      amountPaid: row.amountPaid,
+      totalDue: row.totalDue,
+      owner: {
+        id: row.ownerId,
+        fullName: row.ownerName,
+        apartmentNumber: row.apartmentNumber,
+      },
+    }));
+  }
+
+  success(res, {
+    filename: ocrResult.filename || req.file.originalname,
+    extractedData,
+    matches,
+  });
+});
+
 // ── Períodos ──────────────────────────────────────────────────
 
 // GET /condominium/periods
@@ -507,7 +708,7 @@ router.get('/periods/:id', async (req, res) => {
        COALESCE((
          SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
        ), 0)::float              AS "extrasTotal",
-       (ap.aliquot_amount + ap.mora_at_billing + COALESCE((
+       (ap.aliquot_amount + COALESCE((
          SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
        ), 0))::float             AS "totalDue",
        ap.paid_amount::float     AS "amountPaid",
@@ -762,7 +963,9 @@ router.post('/periods/:id/generate', authorize('ADMIN'), async (req, res) => {
          ON CONFLICT (period_id, owner_id) DO UPDATE SET
            aliquot_amount = EXCLUDED.aliquot_amount,
            mora_at_billing = EXCLUDED.mora_at_billing`,
-        [newId(), period.id, owner.id, aliquotAmount, owner.mora_amount]
+        // La mora pertenece al saldo del propietario; no se factura de nuevo
+        // dentro de la alícuota mensual.
+        [newId(), period.id, owner.id, aliquotAmount, 0]
       );
     }
 
@@ -813,25 +1016,30 @@ router.post('/periods/:id/close', authorize('ADMIN'), async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Pagos pendientes/parciales → OVERDUE; acumular mora en propietario
+    // Solo el saldo generado por este período se convierte en mora. La mora
+    // histórica es un saldo del propietario, no puede volver a sumarse aquí.
     const unpaidRes = await client.query(
-      `SELECT ap.*, o.mora_amount AS current_mora
+      `SELECT ap.*, COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0)::float AS extras_total
        FROM aliquot_payments ap
-       JOIN condo_owners o ON o.id = ap.owner_id
        WHERE ap.period_id = $1 AND ap.status IN ('PENDING', 'PARTIAL')`,
       [period.id]
     );
 
     for (const ap of unpaidRes.rows) {
-      const pending = parseFloat(ap.aliquot_amount) + parseFloat(ap.mora_at_billing) - parseFloat(ap.paid_amount);
+      const periodDue = parseFloat(ap.aliquot_amount) + ap.extras_total;
+      const pending = Math.max(0, periodDue - parseFloat(ap.paid_amount));
       await client.query(
-        `UPDATE aliquot_payments SET status = 'OVERDUE' WHERE id = $1`,
-        [ap.id]
+        `UPDATE aliquot_payments SET status = $1 WHERE id = $2`,
+        [pending > 0.01 ? 'OVERDUE' : 'PAID', ap.id]
       );
-      await client.query(
-        `UPDATE condo_owners SET mora_amount = mora_amount + $1 WHERE id = $2`,
-        [pending, ap.owner_id]
-      );
+      if (pending > 0.01) {
+        await client.query(
+          `UPDATE condo_owners SET mora_amount = mora_amount + $1 WHERE id = $2`,
+          [pending, ap.owner_id]
+        );
+      }
     }
 
     await client.query(
@@ -871,10 +1079,12 @@ router.delete('/periods/:id', authorize('ADMIN'), async (req, res) => {
 
     // 2. Revertir mora acumulada en propietarios por pagos OVERDUE de este período
     const overdueRes = await client.query(
-      `SELECT owner_id,
-              (aliquot_amount + mora_at_billing - paid_amount)::numeric AS pending
-       FROM aliquot_payments
-       WHERE period_id = $1 AND status = 'OVERDUE'`,
+      `SELECT ap.owner_id,
+              GREATEST(0, ap.aliquot_amount + COALESCE((
+                SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+              ), 0) - ap.paid_amount)::numeric AS pending
+       FROM aliquot_payments ap
+       WHERE ap.period_id = $1 AND ap.status = 'OVERDUE'`,
       [period.id]
     );
     for (const row of overdueRes.rows) {
@@ -910,34 +1120,156 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
     notes:       z.string().optional(),
   }).parse(req.body);
 
-  const apRes = await query('SELECT * FROM aliquot_payments WHERE id = $1', [req.params.paymentId]);
+  const apRes = await query(
+    `SELECT ap.*, o.mora_amount::float AS owner_mora_amount
+     FROM aliquot_payments ap
+     JOIN condo_owners o ON o.id = ap.owner_id
+     WHERE ap.id = $1`,
+    [req.params.paymentId]
+  );
   const ap = apRes.rows[0];
   if (!ap) throw new AppError('Pago no encontrado', 404);
   if (ap.status === 'PAID') throw new AppError('Ya fue pagado en su totalidad', 400);
 
-  const total = parseFloat(ap.aliquot_amount) + parseFloat(ap.mora_at_billing) + (await query(
+  const total = parseFloat(ap.aliquot_amount) + (await query(
     'SELECT COALESCE(SUM(amount),0)::float AS t FROM aliquot_payment_extras WHERE payment_id = $1',
     [ap.id]
   )).rows[0].t;
-  const newPaid = parseFloat(ap.paid_amount) + paidAmount;
+  const periodPending = Math.max(0, total - parseFloat(ap.paid_amount));
+  const moraAvailable = ap.owner_mora_amount;
+  if (paidAmount > periodPending + moraAvailable + 0.01) {
+    throw new AppError(`El valor excede el saldo del período y la mora disponible ($${(periodPending + moraAvailable).toFixed(2)})`, 400);
+  }
+  const amountForPeriod = Math.min(paidAmount, periodPending);
+  const amountForMora = Math.min(Math.max(0, paidAmount - periodPending), moraAvailable);
+  const newPaid = parseFloat(ap.paid_amount) + amountForPeriod;
   const status  = newPaid >= total ? 'PAID' : 'PARTIAL';
+  const paymentNotes = [
+    notes || null,
+    amountForMora > 0 ? `Abono a mora: $${amountForMora.toFixed(2)}` : null,
+  ].filter(Boolean).join('\n') || null;
 
-  const { rows } = await query(
-    `UPDATE aliquot_payments SET
-       paid_amount = $1, payment_date = $2, status = $3, notes = $4, registered_by = $5
-     WHERE id = $6 RETURNING *`,
-    [newPaid, paymentDate, status, notes || null, req.user.id, ap.id]
-  );
-
-  // Si pagó completo y tenía mora, descontar mora al propietario
-  if (status === 'PAID' && parseFloat(ap.mora_at_billing) > 0) {
-    await query(
-      `UPDATE condo_owners SET mora_amount = GREATEST(0, mora_amount - $1) WHERE id = $2`,
-      [ap.mora_at_billing, ap.owner_id]
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE aliquot_payments SET
+         paid_amount = $1, payment_date = $2, status = $3, notes = $4, registered_by = $5
+       WHERE id = $6 RETURNING *`,
+      [newPaid, paymentDate, status, paymentNotes, req.user.id, ap.id]
     );
+    let moraPaymentRecordIds = [];
+    if (amountForMora > 0) {
+      moraPaymentRecordIds = await applyMoraPayment(client, {
+        ownerId: ap.owner_id, amount: amountForMora, paymentDate,
+        paymentType: 'ALIQUOT_EXCESS', sourceAliquotPaymentId: ap.id,
+        notes: 'Excedente del pago de alícuota aplicado a mora.', registeredBy: req.user.id,
+      });
+    }
+    await client.query('COMMIT');
+    success(res, { ...rows[0], moraPaymentRecordIds }, 200, `Pago registrado (${status})`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// POST /condominium/payments/:paymentId/ocr-confirm
+// Confirma una coincidencia previamente revisada: guarda el comprobante en el
+// bucket y registra el valor contra la alícuota del mismo período.
+router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle, async (req, res) => {
+  if (!req.file) throw new AppError('Comprobante requerido', 400);
+
+  const data = z.object({
+    amount:        z.coerce.number().positive(),
+    paymentDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida'),
+    ocrSenderName: z.string().max(200).optional(),
+    ocrBank:       z.string().max(200).optional(),
+  }).parse(req.body);
+
+  const apRes = await query(
+    `SELECT ap.*, cep.month, cep.year, cep.status AS period_status,
+            o.mora_amount::float AS owner_mora_amount
+     FROM aliquot_payments ap
+     JOIN condo_expense_periods cep ON cep.id = ap.period_id
+     JOIN condo_owners o ON o.id = ap.owner_id
+     WHERE ap.id = $1`,
+    [req.params.paymentId]
+  );
+  const ap = apRes.rows[0];
+  if (!ap) throw new AppError('Pago no encontrado', 404);
+  if (ap.period_status === 'CLOSED') throw new AppError('El período está cerrado', 400);
+  if (ap.status === 'PAID') throw new AppError('La alícuota ya está pagada', 400);
+
+  const expectedMonth = `${ap.year}-${String(ap.month).padStart(2, '0')}`;
+  if (data.paymentDate.slice(0, 7) !== expectedMonth) {
+    throw new AppError(`La fecha del comprobante no corresponde al período ${expectedMonth}`, 400);
   }
 
-  success(res, rows[0], 200, `Pago registrado (${status})`);
+  const extras = (await query(
+    'SELECT COALESCE(SUM(amount), 0)::float AS total FROM aliquot_payment_extras WHERE payment_id = $1',
+    [ap.id]
+  )).rows[0].total;
+  const totalDue = parseFloat(ap.aliquot_amount) + extras;
+  const periodPending = Math.max(0, totalDue - parseFloat(ap.paid_amount));
+  const moraAvailable = ap.owner_mora_amount;
+  if (data.amount > periodPending + moraAvailable + 0.01) {
+    throw new AppError(`El valor excede el saldo del período y la mora disponible ($${(periodPending + moraAvailable).toFixed(2)})`, 400);
+  }
+  const amountForPeriod = Math.min(data.amount, periodPending);
+  const amountForMora = Math.min(Math.max(0, data.amount - periodPending), moraAvailable);
+  const newPaid = parseFloat(ap.paid_amount) + amountForPeriod;
+  const status = newPaid >= totalDue ? 'PAID' : 'PARTIAL';
+
+  const folder = `rrhh-admin/condominio/comprobantes/${expectedMonth}`;
+  const { url, publicId } = await uploadToCloudinary(req.file.buffer, folder, req.file.mimetype);
+  const ocrNote = [
+    `Comprobante OCR: ${req.file.originalname}`,
+    data.ocrSenderName ? `remitente ${data.ocrSenderName}` : null,
+    data.ocrBank ? `banco ${data.ocrBank}` : null,
+    amountForMora > 0 ? `abono a mora $${amountForMora.toFixed(2)}` : null,
+  ].filter(Boolean).join(' — ');
+
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE aliquot_payments SET
+         paid_amount = $1, payment_date = $2, status = $3,
+         proof_url = $4, proof_public_id = $5, proof_uploaded_at = NOW(),
+         notes = $6, registered_by = $7
+       WHERE id = $8
+       RETURNING *`,
+      [newPaid, data.paymentDate, status, url, publicId,
+       [ap.notes, ocrNote].filter(Boolean).join('\n'), req.user.id, ap.id]
+    );
+
+    if (amountForMora > 0) {
+      await applyMoraPayment(client, {
+        ownerId: ap.owner_id, amount: amountForMora, paymentDate: data.paymentDate,
+        paymentType: 'ALIQUOT_EXCESS', sourceAliquotPaymentId: ap.id,
+        proofUrl: url, proofPublicId: publicId,
+        notes: 'Excedente del comprobante OCR aplicado a mora.', registeredBy: req.user.id,
+      });
+    }
+
+    await client.query('COMMIT');
+
+    // No se elimina el comprobante anterior hasta que el nuevo ya quedó
+    // persistido. Si Cloudinary falla al borrar, el pago nuevo sigue siendo válido.
+    if (ap.proof_public_id) {
+      try { await deleteFromCloudinary(ap.proof_public_id); } catch (_) { /* best-effort */ }
+    }
+    success(res, rows[0], 200, `Comprobante confirmado y pago registrado (${status})`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    try { await deleteFromCloudinary(publicId); } catch (_) { /* best-effort */ }
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // ── Extras por pago ────────────────────────────────────────────
@@ -1010,6 +1342,26 @@ router.post('/payments/:paymentId/proof', authorize('ADMIN'), uploadSingle, asyn
   const ap = apRes.rows[0];
   if (!ap) throw new AppError('Pago no encontrado', 404);
 
+  let moraPaymentRecordIds = [];
+  try {
+    moraPaymentRecordIds = req.body.moraPaymentRecordIds ? JSON.parse(req.body.moraPaymentRecordIds) :
+      (req.body.moraPaymentRecordId ? [req.body.moraPaymentRecordId] : []);
+  } catch (_) {
+    throw new AppError('Registros de abono a mora inválidos', 400);
+  }
+  if (!Array.isArray(moraPaymentRecordIds) || !moraPaymentRecordIds.every(id => typeof id === 'string')) {
+    throw new AppError('Registros de abono a mora inválidos', 400);
+  }
+  if (moraPaymentRecordIds.length) {
+    const recordRes = await query(
+      'SELECT id FROM mora_payment_records WHERE id = ANY($1) AND aliquot_payment_id = $2',
+      [moraPaymentRecordIds, ap.id]
+    );
+    if (recordRes.rows.length !== moraPaymentRecordIds.length) {
+      throw new AppError('Registro de abono a mora no encontrado', 404);
+    }
+  }
+
   // Eliminar comprobante anterior si existe
   if (ap.proof_public_id) {
     await deleteFromCloudinary(ap.proof_public_id);
@@ -1027,6 +1379,14 @@ router.post('/payments/:paymentId/proof', authorize('ADMIN'), uploadSingle, asyn
      WHERE id = $4 RETURNING *`,
     [url, publicId, newStatus, ap.id]
   );
+
+  if (moraPaymentRecordIds.length) {
+    await query(
+      `UPDATE mora_payment_records SET proof_url = $1, proof_public_id = $2
+       WHERE id = ANY($3)`,
+      [url, publicId, moraPaymentRecordIds]
+    );
+  }
 
   success(res, rows[0], 200, 'Comprobante subido');
 });
@@ -1086,11 +1446,50 @@ const morosidadHandler = async (_req, res) => {
        o.mora_amount::float AS "moraAmount",
        o.is_active          AS "isActive",
        o.created_at         AS "createdAt",
-       COUNT(ap.id)::int    AS "overduePeriods"
+       COALESCE((
+         SELECT COUNT(*)::int
+         FROM aliquot_payments ap
+         WHERE ap.owner_id = o.id AND ap.status = 'OVERDUE'
+       ), 0)                AS "overduePeriods",
+       COALESCE((
+         SELECT JSON_AGG(debt ORDER BY debt.year DESC, debt.month DESC)
+         FROM (
+           SELECT
+             cep.id                         AS "periodId",
+             ap.id                          AS "paymentId",
+             cep.month,
+             cep.year,
+             cep.closed_at                  AS "closedAt",
+             ap.aliquot_amount::float       AS "aliquotAmount",
+             COALESCE((
+               SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+             ), 0)::float                   AS "extrasTotal",
+             ap.paid_amount::float          AS "amountPaid",
+             GREATEST(0, ap.aliquot_amount + COALESCE((
+               SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+             ), 0) - ap.paid_amount)::float AS "pendingAmount"
+           FROM aliquot_payments ap
+           JOIN condo_expense_periods cep ON cep.id = ap.period_id
+           WHERE ap.owner_id = o.id AND ap.status = 'OVERDUE'
+         ) debt
+       ), '[]'::json)       AS "debtPeriods"
+       , COALESCE((
+         SELECT JSON_AGG(mora_payment ORDER BY mora_payment."paymentDate" DESC, mora_payment."createdAt" DESC)
+         FROM (
+           SELECT mr.id, mr.debt_payment_id AS "debtPaymentId", mr.amount::float,
+                  mr.payment_date AS "paymentDate", mr.payment_type AS "paymentType",
+                  mr.proof_url AS "proofUrl", mr.notes, mr.created_at AS "createdAt",
+                  debt_period.month AS "debtMonth", debt_period.year AS "debtYear"
+           FROM mora_payment_records mr
+           LEFT JOIN aliquot_payments debt_payment ON debt_payment.id = mr.debt_payment_id
+           LEFT JOIN condo_expense_periods debt_period ON debt_period.id = debt_payment.period_id
+           WHERE mr.owner_id = o.id
+         ) mora_payment
+       ), '[]'::json)       AS "moraPayments"
      FROM condo_owners o
-     LEFT JOIN aliquot_payments ap ON ap.owner_id = o.id AND ap.status = 'OVERDUE'
-     WHERE o.mora_amount > 0 OR ap.id IS NOT NULL
-     GROUP BY o.id
+     WHERE o.mora_amount > 0 OR EXISTS (
+       SELECT 1 FROM aliquot_payments ap WHERE ap.owner_id = o.id AND ap.status = 'OVERDUE'
+     )
      ORDER BY o.mora_amount DESC`
   );
   success(res, rows);
@@ -1215,7 +1614,9 @@ router.get('/reports/balance', async (req, res) => {
             COUNT(ap.id)::int AS total_payments,
             SUM(CASE WHEN ap.status = 'PAID' THEN 1 ELSE 0 END)::int AS paid_count,
             COALESCE(SUM(CASE WHEN ap.status = 'PAID' THEN ap.paid_amount ELSE 0 END), 0) AS total_collected,
-            COALESCE(SUM(ap.aliquot_amount + ap.mora_at_billing), 0) AS total_billed
+            COALESCE(SUM(ap.aliquot_amount + COALESCE((
+              SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+            ), 0)), 0) AS total_billed
      FROM condo_expense_periods cep
      LEFT JOIN aliquot_payments ap ON ap.period_id = cep.id
      ${where}
@@ -1311,7 +1712,9 @@ router.get('/reports/balance/pdf', async (req, res) => {
   const periodsRes = await query(
     `SELECT cep.*,
             COALESCE(SUM(CASE WHEN ap.status = 'PAID' THEN ap.paid_amount ELSE 0 END), 0) AS total_collected,
-            COALESCE(SUM(ap.aliquot_amount + ap.mora_at_billing), 0) AS total_billed
+            COALESCE(SUM(ap.aliquot_amount + COALESCE((
+              SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+            ), 0)), 0) AS total_billed
      FROM condo_expense_periods cep
      LEFT JOIN aliquot_payments ap ON ap.period_id = cep.id
      ${where}

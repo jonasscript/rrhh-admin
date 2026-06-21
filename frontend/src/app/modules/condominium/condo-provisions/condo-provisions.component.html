@@ -39,7 +39,7 @@
           @if (p.calc_type === 'PERCENTAGE') {
             <span class="prov-value">{{ p.value }}% de gastos</span>
           } @else if (p.calc_type === 'FIXED') {
-            <span class="prov-value">{{ p.value | currency:'USD':'symbol':'1.2-2' }}</span>
+            <span class="prov-value">{{ p.value | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
           } @else {
             <span class="prov-value text-color-secondary">Se ingresa al crear el período</span>
           }

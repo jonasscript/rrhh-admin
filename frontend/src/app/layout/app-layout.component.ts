@@ -20,9 +20,10 @@ import { NavbarComponent } from './navbar/navbar.component';
     </div>
   `,
   styles: [`
-    .layout-wrapper { display: flex; min-height: 100vh; background: #f8f9fa; }
-    .layout-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .layout-content { flex: 1; padding: 1.5rem; overflow-y: auto; }
+    .layout-wrapper { display: flex; height: 100vh; overflow: hidden; background: #f8f9fa; }
+    .layout-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .layout-content { flex: 1; min-width: 0; padding: 1.5rem; overflow-y: auto; overflow-x: hidden; }
+    .layout-content > * { min-width: 0; }
   `],
 })
 export class AppLayoutComponent {}

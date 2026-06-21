@@ -23,15 +23,15 @@
   <div class="stats-row">
     <div class="stat-card">
       <span class="stat-label">Costo total laboral / mes</span>
-      <span class="stat-value">{{ totalIessMonthly() | currency:'USD':'symbol':'1.2-2' }}</span>
+      <span class="stat-value">{{ totalIessMonthly() | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-label">Costo patronal / mes</span>
-      <span class="stat-value">{{ totalEmployerMonthly() | currency:'USD':'symbol':'1.2-2' }}</span>
+      <span class="stat-value">{{ totalEmployerMonthly() | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-label">Deducciones empleados / mes</span>
-      <span class="stat-value">{{ totalEmployeeDeductions() | currency:'USD':'symbol':'1.2-2' }}</span>
+      <span class="stat-value">{{ totalEmployeeDeductions() | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
     </div>
     <div class="stat-card">
       <span class="stat-label">Empleados con fondo de reserva</span>
@@ -83,12 +83,12 @@
           </a>
         </td>
         <td>{{ row.position }}</td>
-        <td class="text-right">{{ row.base_salary | currency:'USD':'symbol':'1.2-2' }}</td>
+        <td class="text-right">{{ row.base_salary | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
         @for (cat of catalog(); track cat.id) {
           <td class="text-right">
             @if (getCellValue(row, cat); as val) {
               <span class="obl-val-badge" [class.employer]="cat.payer === 'EMPLOYER'">
-                {{ val | currency:'USD':'symbol':'1.2-2' }}
+                {{ val | currency:'USD':'symbol-narrow':'1.2-2' }}
               </span>
             } @else if (cat.code === 'FONDO_RESERVA') {
               @if (getObl(row, cat)?.is_active) {
@@ -102,7 +102,7 @@
           </td>
         }
         <td class="text-right font-bold iess-total">
-          {{ row.total_iess_monthly | currency:'USD':'symbol':'1.2-2' }}
+          {{ row.total_iess_monthly | currency:'USD':'symbol-narrow':'1.2-2' }}
         </td>
         <td class="text-center">
           <p-button
@@ -168,7 +168,7 @@
                   @if (cat.is_system) {
                     <span class="rate-info">
                       Tasa: {{ (cat.default_value ?? 0) * 100 | number:'1.2-2' }}%
-                      → <strong>{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}</strong>
+                      → <strong>{{ previewEffectiveValue(cat) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
                     </span>
                   } @else {
                     <div class="ctrl-row">
@@ -178,7 +178,7 @@
                                      inputStyleClass="w-full" class="w-full"
                                      [placeholder]="'Defecto: ' + ((cat.default_value ?? 0) * 100 | number:'1.2-2') + '%'" />
                     </div>
-                    <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}/mes</span>
+                    <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol-narrow':'1.2-2' }}/mes</span>
                   }
                   <!-- Payout mode only for FONDO_RESERVA -->
                   @if (cat.code === 'FONDO_RESERVA') {
@@ -201,7 +201,7 @@
                                    [minFractionDigits]="2" [min]="0"
                                    inputStyleClass="w-full" class="w-full" />
                   </div>
-                  <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol':'1.2-2' }}/mes</span>
+                  <span class="preview-amount">{{ previewEffectiveValue(cat) | currency:'USD':'symbol-narrow':'1.2-2' }}/mes</span>
                 }
                 <!-- Cuándo pagar: para cualquier obligación LUMP_SUM (PERCENTAGE o FIXED) -->
                 @if (cat.payment_mode === 'LUMP_SUM' && payFreqOptionsMap[cat.id]) {
@@ -232,7 +232,7 @@
       <div class="dialog-preview">
         <div class="preview-row total">
           <span>Total IESS / mes estimado</span>
-          <span>{{ previewTotalIess | currency:'USD':'symbol':'1.2-2' }}</span>
+          <span>{{ previewTotalIess | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
         </div>
       </div>
     </div>
