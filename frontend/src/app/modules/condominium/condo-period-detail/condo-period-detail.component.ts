@@ -26,6 +26,7 @@ type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | '
 type BulkReceiptStatus = 'queued' | 'scanning' | 'ready' | 'error' | 'confirming' | 'confirmed';
 
 interface BulkReceipt {
+  id?: string;
   file: File;
   status: BulkReceiptStatus;
   scan?: OcrScanResult;
@@ -38,6 +39,10 @@ interface BulkReceipt {
   manualPeriod?: CondoExpensePeriod;
   manualPaymentId?: string;
   manualMatch?: OcrOwnerMatch;
+  description?: string;
+  suggestedByAmount?: boolean;
+  movementProofUrl?: string;
+  movementProofPublicId?: string;
 }
 
 @Component({
@@ -69,11 +74,15 @@ export class CondoPeriodDetailComponent implements OnInit {
   showExtraDialog   = false;
   showBulkUpload    = false;
   showProofPreview  = false;
+  showMoraProofsDialog = false;
   selectedPayment: AliquotPayment | null = null;
+  selectedMoraProofPayment: AliquotPayment | null = null;
   selectedFile: File | null = null;
   proofPreviewUrl = '';
   proofPreviewResource: SafeResourceUrl | null = null;
   bulkProcessing = false;
+  importingMovements = false;
+  showMovementLoading = false;
   bulkReceipts: BulkReceipt[] = [];
   manualPeriods: CondoExpensePeriod[] = [];
   loadingManualPeriods = false;
@@ -124,20 +133,26 @@ export class CondoPeriodDetailComponent implements OnInit {
     return Number(this.paymentForm.controls.amountPaid.value || 0);
   }
 
-  get paymentExcess(): number {
-    return this.selectedPayment ? Math.max(0, this.enteredPaymentAmount - this.periodPending(this.selectedPayment)) : 0;
-  }
-
   get ownerMoraAvailable(): number {
     return Number(this.selectedPayment?.owner?.moraAmount || 0);
   }
 
   get moraToApply(): number {
-    return Math.min(this.paymentExcess, this.ownerMoraAvailable);
+    return Math.min(this.enteredPaymentAmount, this.ownerMoraAvailable);
   }
 
   get finalMoraAfterPayment(): number {
     return Math.max(0, this.ownerMoraAvailable - this.moraToApply);
+  }
+
+  get amountForCurrentPeriod(): number {
+    return this.selectedPayment
+      ? Math.min(Math.max(0, this.enteredPaymentAmount - this.moraToApply), this.periodPending(this.selectedPayment))
+      : 0;
+  }
+
+  get hasMoraPriority(): boolean {
+    return this.ownerMoraAvailable > 0;
   }
 
   get paymentAmountAllowed(): boolean {
@@ -156,7 +171,16 @@ export class CondoPeriodDetailComponent implements OnInit {
       expenseItems: this.svc.getPeriodExpenseItems(id),
     }).subscribe({
       next: ({ period, expenseItems }) => {
-        this.period       = period;
+        this.period = {
+          ...period,
+          payments: [...(period.payments || [])].sort((first, second) =>
+            String(first.owner?.apartmentNumber || '').localeCompare(
+              String(second.owner?.apartmentNumber || ''),
+              'es',
+              { numeric: true, sensitivity: 'base' },
+            ),
+          ),
+        };
         this.expenseItems = expenseItems;
         this.loading      = false;
       },
@@ -230,6 +254,79 @@ export class CondoPeriodDetailComponent implements OnInit {
     void this.processBulkQueue();
   }
 
+  onMovementPdfSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !this.period) return;
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+      this.msg.add({ severity: 'warn', summary: 'Archivo inválido', detail: 'Selecciona un archivo PDF de movimientos.' });
+      return;
+    }
+
+    this.importingMovements = true;
+    this.showMovementLoading = true;
+    // Un estado de cuenta representa una nueva fuente de movimientos. No se
+    // deben conservar filas del PDF importado anteriormente en la vista.
+    this.bulkReceipts = [];
+    this.svc.importMovementPdf(file, this.period.id).subscribe({
+      next: result => {
+        const receipts: BulkReceipt[] = result.transactions.map((transaction, index) => {
+          const scan: OcrScanResult = {
+            filename: result.filename,
+            extractedData: {
+              sender_name: transaction.description,
+              amount: transaction.amount,
+              date: transaction.paymentDate,
+              bank: 'Movimientos bancarios',
+            },
+            matches: transaction.matches,
+            suggestedMatches: transaction.suggestedMatches,
+          };
+          return {
+            id: `${transaction.id}-${Date.now()}-${index}`,
+            file,
+            status: 'ready',
+            scan,
+            match: transaction.matches.length === 1
+              ? transaction.matches[0]
+              : transaction.suggestedMatches?.length === 1
+                ? transaction.suggestedMatches[0]
+                : undefined,
+            amount: transaction.amount,
+            paymentDate: transaction.paymentDate,
+            description: transaction.description,
+            suggestedByAmount: transaction.matches.length === 0 && transaction.suggestedMatches?.length === 1,
+            movementProofUrl: result.proofUrl,
+            movementProofPublicId: result.proofPublicId,
+          };
+        });
+        this.bulkReceipts = receipts;
+        this.showBulkUpload = true;
+        this.msg.add({
+          severity: receipts.length ? 'success' : 'warn',
+          summary: receipts.length ? 'Pagos cargados' : 'Sin ingresos',
+          detail: receipts.length
+            ? `${receipts.length} ingreso(s) encontrado(s). Confirma cada pago antes de registrarlo.`
+            : 'No se encontraron ingresos (+) para registrar.',
+        });
+      },
+      error: err => {
+        this.msg.add({
+          severity: 'error',
+          summary: 'No se pudieron cargar los pagos',
+          detail: err.error?.message || 'Intenta nuevamente con el PDF de movimientos.',
+        });
+        this.importingMovements = false;
+        this.showMovementLoading = false;
+      },
+      complete: () => {
+        this.importingMovements = false;
+        this.showMovementLoading = false;
+      },
+    });
+  }
+
   private async processBulkQueue() {
     const periodId = this.period?.id;
     if (this.bulkProcessing || !periodId) return;
@@ -242,6 +339,10 @@ export class CondoPeriodDetailComponent implements OnInit {
           const scan = await firstValueFrom(this.svc.scanPaymentProof(receipt.file, periodId));
           receipt.scan = scan;
           receipt.match = scan.matches.length === 1 ? scan.matches[0] : undefined;
+          if (!receipt.match && scan.suggestedMatches?.length === 1) {
+            receipt.match = scan.suggestedMatches[0];
+            receipt.suggestedByAmount = true;
+          }
           receipt.amount = this.readOcrAmount(scan.extractedData.amount);
           receipt.paymentDate = this.toIsoDate(scan.extractedData.date);
           receipt.status = 'ready';
@@ -276,7 +377,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   canConfirmReceipt(receipt: BulkReceipt): boolean {
     const match = this.receiptMatch(receipt);
     return !!match && match.paymentStatus !== 'PAID' && !!receipt.amount &&
-      this.isReceiptDateInPeriod(receipt) && receipt.status === 'ready';
+      receipt.status === 'ready';
   }
 
   receiptMatch(receipt: BulkReceipt): OcrOwnerMatch | undefined {
@@ -355,11 +456,14 @@ export class CondoPeriodDetailComponent implements OnInit {
     const match = this.receiptMatch(receipt);
     if (!match || !receipt.amount || !receipt.paymentDate) return;
     receipt.status = 'confirming';
-    this.svc.confirmOcrPayment(match.paymentId, receipt.file, {
+    const hasMovementProof = !!receipt.movementProofUrl && !!receipt.movementProofPublicId;
+    this.svc.confirmOcrPayment(match.paymentId, hasMovementProof ? null : receipt.file, {
       amount: receipt.amount,
       paymentDate: receipt.paymentDate,
       ocrSenderName: receipt.scan?.extractedData.sender_name,
       ocrBank: receipt.scan?.extractedData.bank,
+      movementProofUrl: receipt.movementProofUrl,
+      movementProofPublicId: receipt.movementProofPublicId,
     }).subscribe({
       next: () => {
         receipt.status = 'confirmed';
@@ -436,9 +540,23 @@ export class CondoPeriodDetailComponent implements OnInit {
   openProofPreview(payment: AliquotPayment) {
     if (!payment.proofUrl) return;
     this.selectedPayment = payment;
-    this.proofPreviewUrl = payment.proofUrl;
-    this.proofPreviewResource = this.sanitizer.bypassSecurityTrustResourceUrl(payment.proofUrl);
+    this.openProofPreviewUrl(payment.proofUrl);
+  }
+
+  openProofPreviewUrl(url: string) {
+    this.proofPreviewUrl = url;
+    this.proofPreviewResource = this.sanitizer.bypassSecurityTrustResourceUrl(url);
     this.showProofPreview = true;
+  }
+
+  openMoraProofs(payment: AliquotPayment) {
+    const proofs = payment.moraPaymentProofs || [];
+    if (proofs.length === 1 && proofs[0].proofUrl) {
+      this.openProofPreviewUrl(proofs[0].proofUrl);
+      return;
+    }
+    this.selectedMoraProofPayment = payment;
+    this.showMoraProofsDialog = true;
   }
 
   isPdfProof(): boolean {
@@ -582,6 +700,16 @@ export class CondoPeriodDetailComponent implements OnInit {
   statusSeverity(s: string): TagSeverity {
     return s === 'CLOSED' ? 'danger' : s === 'APPROVED' ? 'success' : 'info';
   }
+
+  periodStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      DRAFT: 'Borrador',
+      APPROVED: 'Aprobado',
+      CLOSED: 'Cerrado',
+    };
+    return labels[status] || status;
+  }
+
   paymentStatusLabel(s: PaymentStatus): string {
     const map: Record<PaymentStatus, string> = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', OVERDUE: 'En mora' };
     return map[s];

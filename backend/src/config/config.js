@@ -18,6 +18,15 @@ const config = {
     user: process.env.EMAIL_USER || '',
     pass: process.env.EMAIL_PASS || '',
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER || '',
+    authMethod: (process.env.EMAIL_AUTH_METHOD || 'PASSWORD').toUpperCase(),
+    oauth2: {
+      clientId: process.env.EMAIL_OAUTH2_CLIENT_ID || '',
+      clientSecret: process.env.EMAIL_OAUTH2_CLIENT_SECRET || '',
+      refreshToken: process.env.EMAIL_OAUTH2_REFRESH_TOKEN || '',
+      // "consumers" funciona con cuentas personales @outlook.com/@hotmail.com.
+      tenant: process.env.EMAIL_OAUTH2_TENANT || 'consumers',
+      tokenUrl: process.env.EMAIL_OAUTH2_TOKEN_URL || '',
+    },
   },
 
   cloudinary: {
@@ -30,6 +39,7 @@ const config = {
   // OCR al que se reenvían los comprobantes.
   ocr: {
     scanUrl: process.env.OCR_SCAN_URL || 'http://localhost:8000/ocr/scan',
+    movementsScanUrl: process.env.OCR_MOVEMENTS_SCAN_URL || 'http://localhost:8000/ocr/movements/scan',
   },
 
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',

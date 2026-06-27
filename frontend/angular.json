@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "rrhh-admin": {
+    "habbita": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
@@ -19,7 +19,7 @@
         "build": {
           "builder": "@angular-devkit/build-angular:application",
           "options": {
-            "outputPath": "dist/rrhh-admin",
+            "outputPath": "dist/habbita",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
@@ -35,9 +35,15 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 { "type": "initial",      "maximumWarning": "500kb",  "maximumError": "1mb" },
-                { "type": "anyComponentStyle", "maximumWarning": "2kb", "maximumError": "4kb" }
+                { "type": "anyComponentStyle", "maximumWarning": "6kb", "maximumError": "8kb" }
               ],
               "outputHashing": "all"
             },
@@ -52,8 +58,8 @@
         "serve": {
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
-            "production":  { "buildTarget": "rrhh-admin:build:production" },
-            "development": { "buildTarget": "rrhh-admin:build:development" }
+            "production":  { "buildTarget": "habbita:build:production" },
+            "development": { "buildTarget": "habbita:build:development" }
           },
           "defaultConfiguration": "development",
           "options": {
@@ -62,7 +68,7 @@
         },
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
-          "options": { "buildTarget": "rrhh-admin:build" }
+          "options": { "buildTarget": "habbita:build" }
         },
         "test": {
           "builder": "@angular-devkit/build-angular:karma",

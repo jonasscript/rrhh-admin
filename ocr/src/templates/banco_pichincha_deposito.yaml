@@ -1,0 +1,68 @@
+# Comprobante de depósito en ventanilla - Banco Pichincha (ticket impreso)
+# Formato: impresión térmica con puntos suspensivos como separadores
+# Ejemplo: "BANCO PICHINCHA C.A."
+#          "Depósito / CUENTAS DE AHORRO"
+#          "Cuenta...: BP-AH 2202313938"
+#          "Nombre...: SANTOS LOOR MARIA DEL MAR"
+#          "Documento: 55638340"
+#          "Efectivo.: 320.00 / Total....: 320.00"
+#          "Moneda...: USD"
+#          "Fecha....: 2020/NOV/02 12H13"
+#          "Control..: Sec-139, En Línea"
+
+id: banco_pichincha_deposito
+name: Banco Pichincha - Depósito Ventanilla
+bank_name: Banco Pichincha
+payment_type: deposit
+
+identify:
+  required:
+    # Photos of thermal tickets commonly split the logo across lines.
+    - "PICHINCHA"
+    - "Cuentas Corrientes"
+  optional:
+    - "CUENTAS DE AHORRO"
+    - "BP-AH"
+    - "Efectivo"
+    - "Nombre..."
+    - "Cajero"
+
+fields:
+  amount:
+    # "Total....: 320.00"
+    - "Total[.]+[:\\s]*(\\d[\\d,\\.]+)"
+    # Fallback: "Efectivo.: 320.00"
+    - "Efectivo[.]+[:\\s]*(\\d[\\d,\\.]+)"
+    # OCR may read the label as "Tota" and separate the amount into a block.
+    - "Tota(?:l)?\\s*\\n\\s*(\\d+\\s*[,\\.]\\s*\\d{2})"
+
+  currency:
+    # "Moneda...: USD"
+    - "Moneda[.]+[:\\s]*(USD|EUR|COP)"
+
+  date:
+    # "Fecha....: 2020/NOV/02 12H13"
+    - "Fecha[.]+[:\\s]*(\\d{4}/[A-Z]{3}/\\d{2})"
+    # Alternativo "Fecha....: 2020/11/02"
+    - "Fecha[.]+[:\\s]*(\\d{4}/\\d{2}/\\d{2})"
+
+  reference_number:
+    # "Control..: Sec-139, En Línea"
+    - "Control[.]+[:\\s]*(Sec-\\d+)"
+    # "Documento: 55638340"
+    - "Documento[:\\s]*(\\d{7,12})"
+    - "[PpDd]ocumento[:\\s]*(\\d{7,12})"
+
+  destination_account:
+    # "Cuenta...: BP-AH 2202313938"
+    - "Cuenta[.]+[:\\s]*(BP-[A-Z]+\\s+\\d+)"
+    - "Cuenta[.]+[:\\s]*(\\d{8,14})"
+    - "BP-CC\\s*(\\d{8,14})"
+
+  receiver_name:
+    # "Nombre...: SANTOS LOOR MARIA DEL MAR"
+    - "Nombre[.]+[:\\s]+([A-Z][A-Z\\s]{4,60}?)(?:\\n|$)"
+    - "BP-CC\\s*\\d+\\s*\\n\\s*([A-Z][A-Z0-9 .,$]{4,60}?)(?:\\n|$)"
+
+defaults:
+  currency: USD

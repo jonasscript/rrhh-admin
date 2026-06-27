@@ -126,6 +126,8 @@ export interface MoraPaymentRecord {
   debtPaymentId?: string;
   debtMonth?: number;
   debtYear?: number;
+  debtTotalAmount?: number;
+  debtCurrentPending?: number;
   amount: number;
   paymentDate: string;
   paymentType: 'ALIQUOT_EXCESS' | 'DIRECT';
@@ -166,6 +168,15 @@ export interface AliquotPayment {
   totalDue: number;
   amountPaid: number; paymentDate?: string;
   proofUrl?: string; proofPublicId?: string;
+  /** Señala que este período estuvo vencido y luego fue cubierto como mora. */
+  wasOverdue?: boolean;
+  moraPaymentProofs?: Array<{
+    id: string;
+    amount: number;
+    paymentDate: string;
+    proofUrl?: string;
+    notes?: string;
+  }>;
   moraPaymentRecordIds?: string[];
   status: PaymentStatus; notes?: string;
   createdAt: string; updatedAt: string;
@@ -204,6 +215,23 @@ export interface OcrScanResult {
   filename: string;
   extractedData: OcrExtractedData;
   matches: OcrOwnerMatch[];
+  suggestedMatches?: OcrOwnerMatch[];
+}
+
+export interface MovementImportTransaction {
+  id: string;
+  paymentDate: string;
+  amount: number;
+  description: string;
+  matches: OcrOwnerMatch[];
+  suggestedMatches?: OcrOwnerMatch[];
+}
+
+export interface MovementImportResult {
+  filename: string;
+  proofUrl: string;
+  proofPublicId: string;
+  transactions: MovementImportTransaction[];
 }
 
 // ── Condominium Expense Items ────────────────────────────────

@@ -227,4 +227,117 @@ const generateBalancePdf = ({ condoName, periods, funds, year, month_from, month
     doc.end();
   });
 
-module.exports = { generatePayrollPdf, generateAliquotPdf, generateBalancePdf };
+/**
+ * Genera el horario de guardias por semanas, con la misma lectura visual del
+ * archivo de rotación: turnos en filas y días en columnas.
+ */
+const generateShiftSchedulePdf = ({ startDate, endDate, assignments }) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 28, size: 'A4', layout: 'landscape' });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const normalize = (value) => String(value || '')
+      .toLocaleLowerCase('es')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const roleFor = (assignment) => {
+      const name = normalize(assignment.shift_name);
+      if (name.includes('descanso')) return 'DESCANSO';
+      if (name.includes('nocturno') || name.includes('noche')) return 'NOCHE';
+      if (name.includes('vespertino') || name.includes('tarde')) return 'TARDE';
+      if (name.includes('diurno') || name.includes('manana')) return 'MAÑANA';
+      return String(assignment.shift_name || 'TURNO').toUpperCase();
+    };
+    const roleOrder = ['MAÑANA', 'TARDE', 'NOCHE', 'DESCANSO'];
+    const foundRoles = [...new Set(assignments.map(roleFor))];
+    const roles = [
+      ...roleOrder.filter((role) => foundRoles.includes(role)),
+      ...foundRoles.filter((role) => !roleOrder.includes(role)),
+    ];
+    const byDateAndRole = new Map();
+    for (const assignment of assignments) {
+      const key = `${String(assignment.date).slice(0, 10)}|${roleFor(assignment)}`;
+      if (!byDateAndRole.has(key)) byDateAndRole.set(key, assignment);
+    }
+
+    const dateFromString = (value) => new Date(`${value}T12:00:00`);
+    const start = dateFromString(startDate);
+    const end = dateFromString(endDate);
+    const firstMonday = new Date(start);
+    firstMonday.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const lastSunday = new Date(end);
+    lastSunday.setDate(end.getDate() + (7 - ((end.getDay() + 6) % 7) - 1));
+    const weekdays = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+    const monthNames = MONTHS_ES;
+    const formatDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    doc.fontSize(17).fillColor('#1e3a5f').font('Helvetica-Bold')
+      .text('HORARIO DE TURNOS — GUARDIAS', { align: 'center' });
+    doc.font('Helvetica').fontSize(10).fillColor('#475569')
+      .text(`${start.getDate()} de ${monthNames[start.getMonth() + 1]} al ${end.getDate()} de ${monthNames[end.getMonth() + 1]} de ${end.getFullYear()}`, { align: 'center' });
+    doc.moveDown(1);
+
+    const tableLeft = 28;
+    const tableWidth = 786;
+    const roleWidth = 90;
+    const dayWidth = (tableWidth - roleWidth) / 7;
+    let weekStart = new Date(firstMonday);
+
+    while (weekStart <= lastSunday) {
+      const rowHeight = 34;
+      const sectionHeight = 22 + (roles.length * rowHeight) + 10;
+      if (doc.y + sectionHeight > 560) doc.addPage();
+
+      const days = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + index);
+        return date;
+      });
+      const headerY = doc.y;
+      doc.rect(tableLeft, headerY, roleWidth, 22).fill('#1e3a5f');
+      doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(8)
+        .text('TURNO', tableLeft, headerY + 7, { width: roleWidth, align: 'center' });
+      for (let index = 0; index < days.length; index++) {
+        const x = tableLeft + roleWidth + (index * dayWidth);
+        const date = days[index];
+        const inRange = date >= start && date <= end;
+        doc.rect(x, headerY, dayWidth, 22).fill(inRange ? '#1e3a5f' : '#cbd5e1');
+        doc.fillColor('#ffffff').fontSize(8)
+          .text(inRange ? `${weekdays[index]} ${date.getDate()}` : '', x, headerY + 7, { width: dayWidth, align: 'center' });
+      }
+
+      for (let rowIndex = 0; rowIndex < roles.length; rowIndex++) {
+        const y = headerY + 22 + (rowIndex * rowHeight);
+        const role = roles[rowIndex];
+        doc.rect(tableLeft, y, roleWidth, rowHeight).fill('#e2e8f0');
+        doc.fillColor('#1e293b').font('Helvetica-Bold').fontSize(8)
+          .text(role, tableLeft + 3, y + 12, { width: roleWidth - 6, align: 'center' });
+        for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
+          const x = tableLeft + roleWidth + (dayIndex * dayWidth);
+          const date = days[dayIndex];
+          const inRange = date >= start && date <= end;
+          const assignment = inRange && byDateAndRole.get(`${formatDate(date)}|${role}`);
+          doc.rect(x, y, dayWidth, rowHeight).fillAndStroke(inRange ? '#ffffff' : '#f8fafc', '#cbd5e1');
+          if (assignment) {
+            const employee = `${assignment.first_name} ${assignment.last_name}`.trim();
+            doc.fillColor('#1e293b').font('Helvetica-Bold').fontSize(7)
+              .text(employee, x + 3, y + 7, { width: dayWidth - 6, align: 'center' });
+            if (role !== 'DESCANSO') {
+              doc.font('Helvetica').fillColor('#64748b').fontSize(6)
+                .text(`${String(assignment.start_time).slice(0, 5)}–${String(assignment.end_time).slice(0, 5)}`, x + 3, y + 19, { width: dayWidth - 6, align: 'center' });
+            }
+          }
+        }
+      }
+      doc.y = headerY + 22 + (roles.length * rowHeight) + 10;
+      weekStart.setDate(weekStart.getDate() + 7);
+    }
+
+    doc.fontSize(8).fillColor('#94a3b8')
+      .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, { align: 'right' });
+    doc.end();
+  });
+
+module.exports = { generatePayrollPdf, generateAliquotPdf, generateBalancePdf, generateShiftSchedulePdf };

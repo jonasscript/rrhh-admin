@@ -1,4 +1,4 @@
-# RRHH Admin + Condominio — Backlog
+# HABBITA — Backlog
 
 > Fecha de análisis: 12 de junio de 2026
 
@@ -223,4 +223,3 @@ Cálculo: PERCENTAGE vs FIXED, payer EMPLOYER/EMPLOYEE, modos IESS vs MONTHLY pa
 - [ ] **Exportar asignaciones de turnos** — Vista imprimible / exportable del calendario semanal o mensual
 - [ ] **Acumulación automática de vacaciones** — Cron job mensual que acredite días según antigüedad. La tabla `vacation_balances` ya tiene los campos `accrued_days` y `last_accrual_date`
 - [ ] **Historial de auditoría** — Registro de cambios críticos (modificaciones de nómina, cambios de rol, ajustes de mora)
-

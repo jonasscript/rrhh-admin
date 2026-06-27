@@ -1,4 +1,4 @@
 export const environment = {
   production: true,
-  apiUrl: '/api/v1',
+  apiUrl: 'https://ladeconsa.com.ec/habbita-api/api/v1',
 };

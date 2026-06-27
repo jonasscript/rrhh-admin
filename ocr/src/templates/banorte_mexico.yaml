@@ -1,0 +1,41 @@
+id: banorte_mexico
+name: Banorte México
+bank_name: Banorte
+payment_type: transfer
+
+identify:
+  required:
+    - "Banorte"
+  optional:
+    - "SPEI"
+    - "Interbancaria"
+    - "Token"
+
+fields:
+  amount:
+    - "(?:Monto|Importe Total)[:\\s$]*\\$?\\s*([\\d,\\.]+)"
+    - "(?:Total)[:\\s]*\\$?\\s*([\\d,\\.]+)"
+
+  currency:
+    - "\\b(MXN|USD)\\b"
+
+  date:
+    - "(?:Fecha\\s+de\\s+operaci[oó]n|Fecha)[:\\s]*(\\d{1,2}/\\d{1,2}/\\d{4})"
+    - "(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    - "(?:Folio|N[uú]mero\\s+de\\s+confirmaci[oó]n)[:\\s]*([0-9A-Z]{6,20})"
+    - "(?:Clave\\s+de\\s+rastreo)[:\\s]*([A-Z0-9]{18,22})"
+
+  origin_account:
+    - "(?:Cuenta\\s+origen|Cuenta\\s+de\\s+cargo)[:\\s]*([*\\dX]{8,20})"
+
+  destination_account:
+    - "(?:CLABE)[:\\s]*(\\d{18})"
+    - "(?:Cuenta\\s+destino)[:\\s]*([*\\dX]{8,20})"
+
+  sender_name:
+    - "(?:Nombre\\s+ordenante|Ordenante)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"
+
+  receiver_name:
+    - "(?:Nombre\\s+beneficiario|Beneficiario)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"

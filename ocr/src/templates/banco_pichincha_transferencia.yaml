@@ -1,0 +1,76 @@
+# Comprobante de transferencia digital - Banco Pichincha (app móvil)
+# Formato: pantalla app con fondo de marca de agua "BANCO PICHINCHA"
+# Ejemplo: "¡Transferencia exitosa!"
+#          "Comprobante: 746892132"
+#          "Monto    $ 4891.00"
+#          "Costo de transacción   $ 0.00"
+#          "Fecha   18 abr 2025"
+#          "Cuenta origen"
+#            "Nombre    Kristiana Diaz Mar..."
+#            "Número de cuenta   ******7834"
+#          "Cuenta destino"
+#            "Nombre    Beatriz Pilar Car..."
+#            "Número de cuenta   ******5920"
+#            "Banco   Banco Pichincha"
+
+id: banco_pichincha_transferencia
+name: Banco Pichincha - Transferencia Digital (App)
+bank_name: Banco Pichincha
+payment_type: transfer
+
+identify:
+  required:
+    - "BANCO PICHINCHA"
+    # The app often adds an initial "¡" or OCR reads it as "i".
+    - "Transferencia exitosa"
+  optional:
+    - "Cuenta origen"
+    - "Cuenta destino"
+    - "Comprobante"
+    - "Costo de transacción"
+
+fields:
+  amount:
+    # "Monto    $ 4891.00"
+    - "Monto\\s+\\$\\s*(\\d[\\d,\\.]+)"
+    - "Monto[:\\s$]*(\\d[\\d,\\.]+)"
+
+  currency:
+    - "\\b(USD)\\b"
+
+  date:
+    # "Fecha   18 abr 2025"
+    - "Fecha\\s+(\\d{1,2}\\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*\\.?\\s+\\d{4})"
+    # "Fecha   18/04/2025"
+    - "Fecha\\s+(\\d{1,2}/\\d{1,2}/\\d{4})"
+    # Mobile receipt: "El 03 de junio de 2026"; OCR can merge "El03".
+    - "(E[l1]\\s*\\d{1,2}\\s*de\\s*(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+de\\s+\\d{4})"
+
+  reference_number:
+    # "Comprobante: 746892132"
+    - "Comprobante[:\\s]*(\\d{6,15})"
+    # Small-screen app OCR can read "N° de comprobante" as "N\" decomprobante".
+    - "N.?\\s*de\\s*comprobante\\s*\\n\\s*(\\d{5,15})"
+
+  origin_account:
+    # Bajo "Cuenta origen" → "Número de cuenta   ******7834"
+    - "Cuenta\\s+origen.{0,120}N[uú]mero\\s+de\\s+cuenta[:\\s]*([*\\d]{6,20})"
+    - "Cuenta\\s*\\n\\s*origen\\s*\\n\\s*([*\\d]{4,20})"
+
+  destination_account:
+    # Bajo "Cuenta destino" → "Número de cuenta   ******5920"
+    - "Cuenta\\s+destino.{0,200}N[uú]mero\\s+de\\s+cuenta[:\\s]*([*\\d]{6,20})"
+    - "Cuenta\\s+destino\\s*\\n\\s*([*\\d]{4,20})"
+
+  sender_name:
+    # Bajo "Cuenta origen" → "Nombre    Kristiana Diaz Mar..."
+    - "Cuenta\\s+origen.{0,80}Nombre\\s+([A-ZÁÉÍÓÚÑ][^\\n]{3,60})"
+    - "(?:^|\\n)De\\s+([^\\n]{3,60})"
+
+  receiver_name:
+    # Bajo "Cuenta destino" → "Nombre    Beatriz Pilar Car..."
+    - "Cuenta\\s+destino.{0,80}Nombre\\s+([A-ZÁÉÍÓÚÑ][^\\n]{3,60})"
+    - "(?:^|\\n)A\\s+([^\\n]{3,60})"
+
+defaults:
+  currency: USD

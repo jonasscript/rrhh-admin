@@ -1,0 +1,52 @@
+# Comprobante de envío/retiro en cajero - Banco del Pacífico (digital)
+# Formato: pantalla app con checkmark verde
+# Ejemplo: "Envío realizado"
+#          "Ana, puedes retirar $40 en un cajero automático de Banco del Pacífico
+#           hasta las 19:30 ingresando el código:"
+#          "543498"                   ← código de retiro en cajero
+#          "Miércoles 30 jun. 2021 — 15:30"
+#          "Número de comprobante: 74577620"
+
+id: banco_pacifico_envio_cajero
+name: Banco del Pacífico - Envío Retiro Cajero (App)
+bank_name: Banco del Pacífico
+payment_type: transfer
+
+defaults:
+  currency: USD
+
+identify:
+  required:
+    - "Banco del Pac"
+    - "realizado"
+  optional:
+    - "cajero"
+    - "ingresando el"
+    - "Número de comprobante"
+    - "Envío realizado"
+    - "Envio realizado"
+
+fields:
+  amount:
+    # "puedes retirar $40"
+    - "retirar\\s+\\$\\s*(\\d[\\d,\\.]*)"
+    # Fallback genérico
+    - "\\$\\s*(\\d[\\d,\\.]+)"
+
+  currency:
+    - "\\b(USD)\\b"
+
+  date:
+    # "Miércoles 30 jun. 2021 — 15:30"
+    - "(\\d{1,2}\\s+\\w+\\.?\\s+\\d{4})"
+    # Alternativo "30/06/2021"
+    - "(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    # "Número de comprobante: 74577620"
+    - "N[uú]mero\\s+de\\s+comprobante[:\\s]*(\\d{6,15})"
+
+  destination_account:
+    # El "código" de retiro en cajero (6 dígitos prominentes)
+    - "ingresando\\s+el\\s+c[oó]digo[:\\s]*\\n*(\\d{4,8})"
+    - "(?:^|\\n)(\\d{4,8})(?:\\n|$)"

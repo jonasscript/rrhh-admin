@@ -1,0 +1,38 @@
+id: nequi_daviplata
+name: Nequi / Daviplata (Colombia)
+bank_name: Nequi
+payment_type: transfer
+
+identify:
+  required:
+    - "Nequi"
+  optional:
+    - "Daviplata"
+    - "Transferencia"
+    - "enviaste"
+    - "recibiste"
+
+fields:
+  amount:
+    - "(?:Valor|Monto)[:\\s$]*\\$?\\s*([\\d,\\.]+)"
+    - "\\$\\s*([\\d,\\.]+)"
+
+  currency:
+    - "\\b(COP)\\b"
+
+  date:
+    - "(?:Fecha)[:\\s]*(\\d{1,2}/\\d{1,2}/\\d{4})"
+    - "(?:Fecha)[:\\s]*(\\d{4}-\\d{2}-\\d{2})"
+    - "(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    - "(?:Referencia|N[uú]mero|Aprobaci[oó]n|Transacci[oó]n)[:\\s#]*([0-9A-Z]{6,20})"
+
+  destination_account:
+    - "(?:Celular|Tel[eé]fono|N[uú]mero)[:\\s]*(\\d{10})"
+
+  sender_name:
+    - "(?:Enviado\\s+por|De)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"
+
+  receiver_name:
+    - "(?:Enviado\\s+a|Para)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"

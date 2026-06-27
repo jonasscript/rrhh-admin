@@ -1,0 +1,47 @@
+id: bbva_mexico
+name: BBVA México
+bank_name: BBVA
+payment_type: transfer
+
+# Palabras que identifican este comprobante.
+# Todas las "required" deben estar presentes; las "optional" suman score.
+identify:
+  required:
+    - "BBVA"
+  optional:
+    - "Bancomer"
+    - "SPEI"
+    - "CoDi"
+    - "Transfiere"
+
+fields:
+  amount:
+    - "(?:Monto|Importe)[:\\s$]*\\$?\\s*([\\d,\\.]+)"
+    - "(?:Total\\s+de\\s+la\\s+operaci[oó]n)[:\\s]*\\$?\\s*([\\d,\\.]+)"
+
+  currency:
+    - "\\b(MXN|USD)\\b"
+
+  date:
+    - "(?:Fecha)[:\\s]*(\\d{1,2}/\\d{1,2}/\\d{4})"
+    - "(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    - "(?:N[uú]mero\\s+de\\s+operaci[oó]n|Folio)[:\\s]*([0-9]{6,20})"
+    - "(?:Clave\\s+de\\s+rastreo)[:\\s]*([A-Z0-9]{18,22})"
+    - "(?:Referencia)[:\\s]*([0-9]{6,20})"
+
+  origin_account:
+    - "(?:Cuenta\\s+cargo|Cuenta\\s+origen|Origen)[:\\s]*([*\\dX]{8,20})"
+    - "(?:De\\s+la\\s+cuenta)[:\\s]*([*\\dX]{8,20})"
+
+  destination_account:
+    - "(?:CLABE)[:\\s]*(\\d{18})"
+    - "(?:Cuenta\\s+destino|Cuenta\\s+beneficiaria|Destino)[:\\s]*([*\\dX]{8,20})"
+    - "(?:A\\s+la\\s+cuenta)[:\\s]*([*\\dX]{8,20})"
+
+  sender_name:
+    - "(?:Nombre\\s+del\\s+ordenante|Ordenante|Nombre)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"
+
+  receiver_name:
+    - "(?:Beneficiario|Receptor)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"

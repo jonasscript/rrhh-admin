@@ -24,8 +24,19 @@ const { errorMiddleware } = require('./middleware/error.middleware');
 const app = express();
 
 // ── Seguridad y parseo ────────────────────────────────────────
-app.use(helmet());
-app.use(cors({ origin: config.frontendUrl, credentials: true }));
+app.use(helmet({ referrerPolicy: false }));
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+app.options('*', cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -34,22 +45,36 @@ if (config.nodeEnv !== 'test') {
 }
 
 // ── Rutas ─────────────────────────────────────────────────────
-const BASE = '/api/v1';
+const registerApiRoutes = (base) => {
+  app.use(`${base}/auth`,          authRoutes);
+  app.use(`${base}/users`,         userRoutes);
+  app.use(`${base}/employees`,     employeeRoutes);
+  app.use(`${base}/departments`,   departmentRoutes);
+  app.use(`${base}/payroll`,       payrollRoutes);
+  app.use(`${base}/vacations`,     vacationRoutes);
+  app.use(`${base}/shifts`,        shiftRoutes);
+  app.use(`${base}/announcements`, announcementRoutes);
+  app.use(`${base}/condominium`,   condominiumRoutes);
+  app.use(`${base}/labor-obligations`, laborObligationsRoutes);
+  app.use(`${base}/obligation-catalog`, obligationCatalogRoutes);
+};
 
-app.use(`${BASE}/auth`,          authRoutes);
-app.use(`${BASE}/users`,         userRoutes);
-app.use(`${BASE}/employees`,     employeeRoutes);
-app.use(`${BASE}/departments`,   departmentRoutes);
-app.use(`${BASE}/payroll`,       payrollRoutes);
-app.use(`${BASE}/vacations`,     vacationRoutes);
-app.use(`${BASE}/shifts`,        shiftRoutes);
-app.use(`${BASE}/announcements`, announcementRoutes);
-app.use(`${BASE}/condominium`,   condominiumRoutes);
-app.use(`${BASE}/labor-obligations`, laborObligationsRoutes);
-app.use(`${BASE}/obligation-catalog`, obligationCatalogRoutes);
+registerApiRoutes('/api/v1');
+registerApiRoutes('/habbita-api/api/v1');
+registerApiRoutes('/habbita-api');
+registerApiRoutes('');
 
 // ── Health check ──────────────────────────────────────────────
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get([
+  '/',
+  '/health',
+  '/api/v1',
+  '/habbita-api',
+  '/habbita-api/',
+  '/habbita-api/health',
+  '/habbita-api/api/v1',
+  '/habbita-api/api/v1/health',
+], (_req, res) => res.json({ status: 'ok', name: 'HABBITA API' }));
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Ruta no encontrada' }));

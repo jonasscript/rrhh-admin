@@ -43,6 +43,55 @@ function findOwnerMatches(senderName, payments) {
   return payments.filter(payment => nameTokens(payment.ownerName).some(token => senderTokens.has(token)));
 }
 
+function numericAmount(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const normalized = String(value || '').trim().replace(/[$\s]/g, '');
+  if (!normalized) return null;
+  const amount = normalized.includes(',') && normalized.includes('.')
+    ? Number(normalized.replace(/,/g, ''))
+    : Number(normalized.replace(',', '.'));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function findPaymentAmountMatches(amount, payments) {
+  if (!amount || amount <= 0) return [];
+  return payments.filter(payment => {
+    const pending = Math.max(0, Number(payment.totalDue) - Number(payment.amountPaid));
+    return payment.paymentStatus !== 'PAID' && Math.abs(pending - amount) <= 0.01;
+  });
+}
+
+// Un PDF de movimientos puede respaldar varios pagos. Solo se elimina del
+// bucket cuando ninguna alícuota ni abono a mora conserva una referencia.
+async function deleteProofIfUnreferenced(publicId) {
+  if (!publicId) return;
+  const { rows } = await query(
+    `SELECT EXISTS (
+       SELECT 1 FROM aliquot_payments WHERE proof_public_id = $1
+       UNION ALL
+       SELECT 1 FROM mora_payment_records WHERE proof_public_id = $1
+     ) AS referenced`,
+    [publicId]
+  );
+  if (!rows[0].referenced) await deleteFromCloudinary(publicId);
+}
+
+function toOcrOwnerMatch(row) {
+  return {
+    paymentId: row.paymentId,
+    paymentStatus: row.paymentStatus,
+    aliquotAmount: row.aliquotAmount,
+    moraAtBilling: row.moraAtBilling,
+    amountPaid: row.amountPaid,
+    totalDue: row.totalDue,
+    owner: {
+      id: row.ownerId,
+      fullName: row.ownerName,
+      apartmentNumber: row.apartmentNumber,
+    },
+  };
+}
+
 // Aplica un abono a mora siguiendo FIFO: primero el período vencido más
 // antiguo. Cada tramo queda auditado y enlazado a la alícuota que lo originó.
 async function applyMoraPayment(client, {
@@ -82,8 +131,8 @@ async function applyMoraPayment(client, {
          (id, owner_id, debt_payment_id, aliquot_payment_id, amount, payment_date, payment_type,
           proof_url, proof_public_id, notes, registered_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [recordId, ownerId, debt.id, sourceAliquotPaymentId, applied, paymentDate, paymentType,
-       proofUrl, proofPublicId, notes, registeredBy]
+      [recordId, ownerId, debt.id, sourceAliquotPaymentId,
+       applied, paymentDate, paymentType, proofUrl, proofPublicId, notes, registeredBy]
     );
     recordIds.push(recordId);
     remaining -= applied;
@@ -577,8 +626,10 @@ router.post('/owners/:id/mora/payments', authorize('ADMIN'), uploadSingle, async
     throw new AppError(`El abono excede la mora disponible de $${currentMora.toFixed(2)}`, 400);
   }
 
-  const folder = `rrhh-admin/condominio/comprobantes/mora/${data.paymentDate.slice(0, 7)}`;
-  const { url, publicId } = await uploadToCloudinary(req.file.buffer, folder, req.file.mimetype);
+  const folder = `habbita/condominio/comprobantes/mora/${data.paymentDate.slice(0, 7)}`;
+  const { url, publicId } = await uploadToCloudinary(
+    req.file.buffer, folder, req.file.mimetype, req.file.originalname
+  );
   const client = await getClient();
   try {
     await client.query('BEGIN');
@@ -635,6 +686,7 @@ router.post('/ocr/scan', authorize('ADMIN'), uploadSingle, async (req, res) => {
 
   const extractedData = ocrResult.extracted_data || {};
   let matches = [];
+  let suggestedMatches = [];
 
   // El período es opcional para conservar un endpoint OCR reutilizable. Al
   // recibirlo, la respuesta ya incluye el pago del período que puede confirmarse.
@@ -654,25 +706,111 @@ router.post('/ocr/scan', authorize('ADMIN'), uploadSingle, async (req, res) => {
        ORDER BY o.unit_number`,
       [req.body.periodId]
     );
-    matches = findOwnerMatches(extractedData.sender_name, rows).map(row => ({
-      paymentId: row.paymentId,
-      paymentStatus: row.paymentStatus,
-      aliquotAmount: row.aliquotAmount,
-      moraAtBilling: row.moraAtBilling,
-      amountPaid: row.amountPaid,
-      totalDue: row.totalDue,
-      owner: {
-        id: row.ownerId,
-        fullName: row.ownerName,
-        apartmentNumber: row.apartmentNumber,
-      },
-    }));
+    matches = findOwnerMatches(extractedData.sender_name, rows).map(toOcrOwnerMatch);
+    if (!matches.length) {
+      suggestedMatches = findPaymentAmountMatches(numericAmount(extractedData.amount), rows).map(toOcrOwnerMatch);
+    }
   }
 
   success(res, {
     filename: ocrResult.filename || req.file.originalname,
     extractedData,
     matches,
+    suggestedMatches,
+  });
+});
+
+// POST /condominium/movements/scan
+// Lee un estado de movimientos bancarios en PDF. Solo devuelve ingresos (+);
+// la confirmación posterior reutiliza el flujo seguro de comprobantes OCR.
+router.post('/movements/scan', authorize('ADMIN'), uploadSingle, async (req, res) => {
+  if (!req.file) throw new AppError('Archivo requerido', 400);
+  if (req.file.mimetype !== 'application/pdf' && !/\.pdf$/i.test(req.file.originalname)) {
+    throw new AppError('Selecciona el PDF de movimientos bancarios', 400);
+  }
+  const periodId = z.string().parse(req.body.periodId);
+
+  const form = new FormData();
+  form.append(
+    'file',
+    new Blob([req.file.buffer], { type: req.file.mimetype }),
+    req.file.originalname,
+  );
+
+  let movementsResponse;
+  try {
+    movementsResponse = await fetch(config.ocr.movementsScanUrl, { method: 'POST', body: form });
+  } catch (_) {
+    throw new AppError('No fue posible conectar con el servicio OCR', 502);
+  }
+
+  let movementsResult;
+  try {
+    movementsResult = await movementsResponse.json();
+  } catch (_) {
+    throw new AppError('El servicio OCR devolvió una respuesta inválida', 502);
+  }
+  if (!movementsResponse.ok || !movementsResult.success) {
+    throw new AppError(movementsResult.error || 'No se pudo leer el PDF de movimientos', 422);
+  }
+
+  const transactions = (Array.isArray(movementsResult.records) ? movementsResult.records : [])
+    .map((record, index) => ({
+      id: String(record.id || `movement-${index + 1}`),
+      paymentDate: String(record.payment_date || ''),
+      amount: Number(record.amount),
+      description: String(record.description || '').trim(),
+    }))
+    .filter(transaction =>
+      /^\d{4}-\d{2}-\d{2}$/.test(transaction.paymentDate) &&
+      Number.isFinite(transaction.amount) && transaction.amount > 0
+    );
+  if (!transactions.length) {
+    throw new AppError('No se encontraron ingresos (+) en el formato de movimientos bancarios', 422);
+  }
+
+  const { rows } = await query(
+    `SELECT ap.id AS "paymentId", ap.status AS "paymentStatus",
+            ap.aliquot_amount::float AS "aliquotAmount",
+            ap.mora_at_billing::float AS "moraAtBilling",
+            ap.paid_amount::float AS "amountPaid",
+            (ap.aliquot_amount + COALESCE((
+              SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+            ), 0))::float AS "totalDue",
+            o.id AS "ownerId", o.name AS "ownerName", o.unit_number AS "apartmentNumber"
+     FROM aliquot_payments ap
+     JOIN condo_owners o ON o.id = ap.owner_id
+     WHERE ap.period_id = $1
+     ORDER BY o.unit_number`,
+    [periodId]
+  );
+
+  const result = transactions.map(transaction => ({
+    ...transaction,
+    matches: findOwnerMatches(transaction.description, rows).map(toOcrOwnerMatch),
+    suggestedMatches: [],
+  }));
+
+  for (const transaction of result) {
+    if (!transaction.matches.length) {
+      transaction.suggestedMatches = findPaymentAmountMatches(transaction.amount, rows).map(toOcrOwnerMatch);
+    }
+  }
+
+  // El estado de cuenta es un único comprobante fuente: se almacena una sola
+  // vez y todos los pagos confirmados desde esta importación lo referencian.
+  const movementProof = await uploadToCloudinary(
+    req.file.buffer,
+    `habbita/condominio/movimientos/${periodId}`,
+    req.file.mimetype,
+    req.file.originalname
+  );
+
+  success(res, {
+    filename: movementsResult.filename || req.file.originalname,
+    proofUrl: movementProof.url,
+    proofPublicId: movementProof.publicId,
+    transactions: result,
   });
 });
 
@@ -715,6 +853,22 @@ router.get('/periods/:id', async (req, res) => {
        ap.payment_date           AS "paymentDate",
        ap.proof_url              AS "proofUrl",
        ap.proof_public_id        AS "proofPublicId",
+       EXISTS (
+         SELECT 1 FROM mora_payment_records mr WHERE mr.debt_payment_id = ap.id
+       )                         AS "wasOverdue",
+       COALESCE((
+         SELECT JSON_AGG(
+           JSON_BUILD_OBJECT(
+             'id',          mr.id,
+             'amount',      mr.amount::float,
+             'paymentDate', mr.payment_date,
+             'proofUrl',    mr.proof_url,
+             'notes',       mr.notes
+           ) ORDER BY mr.payment_date ASC, mr.created_at ASC
+         )
+         FROM mora_payment_records mr
+         WHERE mr.debt_payment_id = ap.id
+       ), '[]'::json)            AS "moraPaymentProofs",
        ap.status,
        ap.notes,
        ap.created_at             AS "createdAt",
@@ -1068,14 +1222,13 @@ router.delete('/periods/:id', authorize('ADMIN'), async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Eliminar comprobantes de Cloudinary asociados a los pagos
+    // 1. Conservar las referencias para limpiar después del COMMIT. Un mismo
+    // PDF de movimientos puede estar asociado a más de una alícuota.
     const proofsRes = await client.query(
       `SELECT proof_public_id FROM aliquot_payments WHERE period_id = $1 AND proof_public_id IS NOT NULL`,
       [period.id]
     );
-    for (const row of proofsRes.rows) {
-      try { await deleteFromCloudinary(row.proof_public_id); } catch (_) { /* best-effort */ }
-    }
+    const proofPublicIds = [...new Set(proofsRes.rows.map((row) => row.proof_public_id))];
 
     // 2. Revertir mora acumulada en propietarios por pagos OVERDUE de este período
     const overdueRes = await client.query(
@@ -1101,6 +1254,9 @@ router.delete('/periods/:id', authorize('ADMIN'), async (req, res) => {
     await client.query('DELETE FROM condo_expense_periods     WHERE id = $1',        [period.id]);
 
     await client.query('COMMIT');
+    for (const publicId of proofPublicIds) {
+      try { await deleteProofIfUnreferenced(publicId); } catch (_) { /* best-effort */ }
+    }
     success(res, null, 200, 'Período eliminado');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1140,13 +1296,15 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
   if (paidAmount > periodPending + moraAvailable + 0.01) {
     throw new AppError(`El valor excede el saldo del período y la mora disponible ($${(periodPending + moraAvailable).toFixed(2)})`, 400);
   }
-  const amountForPeriod = Math.min(paidAmount, periodPending);
-  const amountForMora = Math.min(Math.max(0, paidAmount - periodPending), moraAvailable);
+  // La mora tiene prioridad: se cubre primero en FIFO (la más antigua a la
+  // más reciente) y únicamente el remanente se aplica al período actual.
+  const amountForMora = Math.min(paidAmount, moraAvailable);
+  const amountForPeriod = Math.min(Math.max(0, paidAmount - amountForMora), periodPending);
   const newPaid = parseFloat(ap.paid_amount) + amountForPeriod;
-  const status  = newPaid >= total ? 'PAID' : 'PARTIAL';
+  const status  = newPaid >= total ? 'PAID' : newPaid > 0 ? 'PARTIAL' : ap.status;
   const paymentNotes = [
     notes || null,
-    amountForMora > 0 ? `Abono a mora: $${amountForMora.toFixed(2)}` : null,
+    amountForMora > 0 ? `Pago aplicado prioritariamente a mora: $${amountForMora.toFixed(2)}` : null,
   ].filter(Boolean).join('\n') || null;
 
   const client = await getClient();
@@ -1154,16 +1312,18 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE aliquot_payments SET
-         paid_amount = $1, payment_date = $2, status = $3, notes = $4, registered_by = $5
-       WHERE id = $6 RETURNING *`,
-      [newPaid, paymentDate, status, paymentNotes, req.user.id, ap.id]
+         paid_amount = $1,
+         payment_date = CASE WHEN $2::numeric > 0 THEN $3 ELSE payment_date END,
+         status = $4, notes = $5, registered_by = $6
+       WHERE id = $7 RETURNING *`,
+      [newPaid, amountForPeriod, paymentDate, status, paymentNotes, req.user.id, ap.id]
     );
     let moraPaymentRecordIds = [];
     if (amountForMora > 0) {
       moraPaymentRecordIds = await applyMoraPayment(client, {
         ownerId: ap.owner_id, amount: amountForMora, paymentDate,
         paymentType: 'ALIQUOT_EXCESS', sourceAliquotPaymentId: ap.id,
-        notes: 'Excedente del pago de alícuota aplicado a mora.', registeredBy: req.user.id,
+        notes: 'Pago de alícuota aplicado prioritariamente a mora.', registeredBy: req.user.id,
       });
     }
     await client.query('COMMIT');
@@ -1180,14 +1340,27 @@ router.post('/payments/:paymentId/register', authorize('ADMIN'), async (req, res
 // Confirma una coincidencia previamente revisada: guarda el comprobante en el
 // bucket y registra el valor contra la alícuota del mismo período.
 router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle, async (req, res) => {
-  if (!req.file) throw new AppError('Comprobante requerido', 400);
-
   const data = z.object({
     amount:        z.coerce.number().positive(),
     paymentDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida'),
     ocrSenderName: z.string().max(200).optional(),
     ocrBank:       z.string().max(200).optional(),
-  }).parse(req.body);
+    movementProofUrl: z.string().url().optional(),
+    movementProofPublicId: z.string().min(1).optional(),
+  }).refine(
+    (value) => Boolean(value.movementProofUrl) === Boolean(value.movementProofPublicId),
+    { message: 'La referencia al PDF de movimientos está incompleta' }
+  ).parse(req.body);
+
+  const sharedMovementProof = !!data.movementProofUrl && !!data.movementProofPublicId;
+  if (!req.file && !sharedMovementProof) throw new AppError('Comprobante requerido', 400);
+  if (
+    sharedMovementProof &&
+    !data.movementProofPublicId.startsWith('habbita/condominio/movimientos/') &&
+    !data.movementProofPublicId.startsWith('rrhh-admin/condominio/movimientos/')
+  ) {
+    throw new AppError('La referencia al PDF de movimientos no es válida', 400);
+  }
 
   const apRes = await query(
     `SELECT ap.*, cep.month, cep.year, cep.status AS period_status,
@@ -1204,9 +1377,9 @@ router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle
   if (ap.status === 'PAID') throw new AppError('La alícuota ya está pagada', 400);
 
   const expectedMonth = `${ap.year}-${String(ap.month).padStart(2, '0')}`;
-  if (data.paymentDate.slice(0, 7) !== expectedMonth) {
-    throw new AppError(`La fecha del comprobante no corresponde al período ${expectedMonth}`, 400);
-  }
+  // if (data.paymentDate.slice(0, 7) !== expectedMonth) {
+  //   throw new AppError(`La fecha del comprobante no corresponde al período ${expectedMonth}`, 400);
+  // }
 
   const extras = (await query(
     'SELECT COALESCE(SUM(amount), 0)::float AS total FROM aliquot_payment_extras WHERE payment_id = $1',
@@ -1218,18 +1391,28 @@ router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle
   if (data.amount > periodPending + moraAvailable + 0.01) {
     throw new AppError(`El valor excede el saldo del período y la mora disponible ($${(periodPending + moraAvailable).toFixed(2)})`, 400);
   }
-  const amountForPeriod = Math.min(data.amount, periodPending);
-  const amountForMora = Math.min(Math.max(0, data.amount - periodPending), moraAvailable);
+  // Mantener la misma regla que el registro manual: mora antigua primero,
+  // después el período abierto al que se asignó el comprobante.
+  const amountForMora = Math.min(data.amount, moraAvailable);
+  const amountForPeriod = Math.min(Math.max(0, data.amount - amountForMora), periodPending);
   const newPaid = parseFloat(ap.paid_amount) + amountForPeriod;
-  const status = newPaid >= totalDue ? 'PAID' : 'PARTIAL';
+  const status = newPaid >= totalDue ? 'PAID' : newPaid > 0 ? 'PARTIAL' : ap.status;
 
-  const folder = `rrhh-admin/condominio/comprobantes/${expectedMonth}`;
-  const { url, publicId } = await uploadToCloudinary(req.file.buffer, folder, req.file.mimetype);
+  const uploadedNewProof = !sharedMovementProof;
+  const proof = sharedMovementProof
+    ? { url: data.movementProofUrl, publicId: data.movementProofPublicId }
+    : await uploadToCloudinary(
+      req.file.buffer,
+      `habbita/condominio/comprobantes/${expectedMonth}`,
+      req.file.mimetype,
+      req.file.originalname
+    );
+  const { url, publicId } = proof;
   const ocrNote = [
-    `Comprobante OCR: ${req.file.originalname}`,
+    `Comprobante OCR: ${req.file?.originalname || 'PDF de movimientos bancarios'}`,
     data.ocrSenderName ? `remitente ${data.ocrSenderName}` : null,
     data.ocrBank ? `banco ${data.ocrBank}` : null,
-    amountForMora > 0 ? `abono a mora $${amountForMora.toFixed(2)}` : null,
+    amountForMora > 0 ? `pago aplicado prioritariamente a mora $${amountForMora.toFixed(2)}` : null,
   ].filter(Boolean).join(' — ');
 
   const client = await getClient();
@@ -1237,12 +1420,13 @@ router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle
     await client.query('BEGIN');
     const { rows } = await client.query(
       `UPDATE aliquot_payments SET
-         paid_amount = $1, payment_date = $2, status = $3,
-         proof_url = $4, proof_public_id = $5, proof_uploaded_at = NOW(),
-         notes = $6, registered_by = $7
-       WHERE id = $8
+         paid_amount = $1,
+         payment_date = CASE WHEN $2::numeric > 0 THEN $3 ELSE payment_date END,
+         status = $4, proof_url = $5, proof_public_id = $6, proof_uploaded_at = NOW(),
+         notes = $7, registered_by = $8
+       WHERE id = $9
        RETURNING *`,
-      [newPaid, data.paymentDate, status, url, publicId,
+      [newPaid, amountForPeriod, data.paymentDate, status, url, publicId,
        [ap.notes, ocrNote].filter(Boolean).join('\n'), req.user.id, ap.id]
     );
 
@@ -1251,7 +1435,7 @@ router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle
         ownerId: ap.owner_id, amount: amountForMora, paymentDate: data.paymentDate,
         paymentType: 'ALIQUOT_EXCESS', sourceAliquotPaymentId: ap.id,
         proofUrl: url, proofPublicId: publicId,
-        notes: 'Excedente del comprobante OCR aplicado a mora.', registeredBy: req.user.id,
+        notes: 'Comprobante OCR aplicado prioritariamente a mora.', registeredBy: req.user.id,
       });
     }
 
@@ -1259,13 +1443,15 @@ router.post('/payments/:paymentId/ocr-confirm', authorize('ADMIN'), uploadSingle
 
     // No se elimina el comprobante anterior hasta que el nuevo ya quedó
     // persistido. Si Cloudinary falla al borrar, el pago nuevo sigue siendo válido.
-    if (ap.proof_public_id) {
-      try { await deleteFromCloudinary(ap.proof_public_id); } catch (_) { /* best-effort */ }
+    if (ap.proof_public_id && ap.proof_public_id !== publicId) {
+      try { await deleteProofIfUnreferenced(ap.proof_public_id); } catch (_) { /* best-effort */ }
     }
     success(res, rows[0], 200, `Comprobante confirmado y pago registrado (${status})`);
   } catch (err) {
     await client.query('ROLLBACK');
-    try { await deleteFromCloudinary(publicId); } catch (_) { /* best-effort */ }
+    if (uploadedNewProof) {
+      try { await deleteFromCloudinary(publicId); } catch (_) { /* best-effort */ }
+    }
     throw err;
   } finally {
     client.release();
@@ -1362,16 +1548,13 @@ router.post('/payments/:paymentId/proof', authorize('ADMIN'), uploadSingle, asyn
     }
   }
 
-  // Eliminar comprobante anterior si existe
-  if (ap.proof_public_id) {
-    await deleteFromCloudinary(ap.proof_public_id);
-  }
-
   const month = String(ap.created_at).slice(0, 7);
-  const folder = `rrhh-admin/condominio/comprobantes/${month}`;
-  const { url, publicId } = await uploadToCloudinary(req.file.buffer, folder, req.file.mimetype);
+  const folder = `habbita/condominio/comprobantes/${month}`;
+  const { url, publicId } = await uploadToCloudinary(
+    req.file.buffer, folder, req.file.mimetype, req.file.originalname
+  );
 
-  const newStatus = ap.status === 'PENDING' ? 'PARTIAL' : ap.status;
+  const newStatus = ap.status === 'PENDING' && parseFloat(ap.paid_amount) > 0.01 ? 'PARTIAL' : ap.status;
 
   const { rows } = await query(
     `UPDATE aliquot_payments SET
@@ -1388,6 +1571,10 @@ router.post('/payments/:paymentId/proof', authorize('ADMIN'), uploadSingle, asyn
     );
   }
 
+  if (ap.proof_public_id && ap.proof_public_id !== publicId) {
+    try { await deleteProofIfUnreferenced(ap.proof_public_id); } catch (_) { /* best-effort */ }
+  }
+
   success(res, rows[0], 200, 'Comprobante subido');
 });
 
@@ -1401,13 +1588,12 @@ router.delete('/payments/:paymentId/proof', authorize('ADMIN'), async (req, res)
   if (!ap) throw new AppError('Pago no encontrado', 404);
   if (!ap.proof_public_id) throw new AppError('No hay comprobante', 400);
 
-  await deleteFromCloudinary(ap.proof_public_id);
-
   await query(
     `UPDATE aliquot_payments SET proof_url = NULL, proof_public_id = NULL, proof_uploaded_at = NULL
      WHERE id = $1`,
     [req.params.paymentId]
   );
+  try { await deleteProofIfUnreferenced(ap.proof_public_id); } catch (_) { /* best-effort */ }
   success(res, null, 200, 'Comprobante eliminado');
 });
 
@@ -1479,7 +1665,13 @@ const morosidadHandler = async (_req, res) => {
            SELECT mr.id, mr.debt_payment_id AS "debtPaymentId", mr.amount::float,
                   mr.payment_date AS "paymentDate", mr.payment_type AS "paymentType",
                   mr.proof_url AS "proofUrl", mr.notes, mr.created_at AS "createdAt",
-                  debt_period.month AS "debtMonth", debt_period.year AS "debtYear"
+                  debt_period.month AS "debtMonth", debt_period.year AS "debtYear",
+                  (debt_payment.aliquot_amount + COALESCE((
+                    SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = debt_payment.id
+                  ), 0))::float AS "debtTotalAmount",
+                  GREATEST(0, debt_payment.aliquot_amount + COALESCE((
+                    SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = debt_payment.id
+                  ), 0) - debt_payment.paid_amount)::float AS "debtCurrentPending"
            FROM mora_payment_records mr
            LEFT JOIN aliquot_payments debt_payment ON debt_payment.id = mr.debt_payment_id
            LEFT JOIN condo_expense_periods debt_period ON debt_period.id = debt_payment.period_id

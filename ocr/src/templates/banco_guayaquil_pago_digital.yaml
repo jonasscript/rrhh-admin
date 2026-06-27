@@ -1,0 +1,105 @@
+# Comprobante de pago digital - Banco Guayaquil (app móvil)
+# Formato: pantalla app con logo rosado
+#
+# IMPORTANT: The OCR engine misreads the stylised logo "Banco Guayaquil" as
+# "gançaquil" or similar, and "$" as "S".  Identification keywords are chosen
+# from reliably-read body text, NOT the logo.
+#
+# Actual OCR block order (verified from real scan):
+#   [0]  gançaquil           (logo — garbled, unusable for keywords)
+#   [1]  No.0003375906       → reference_number
+#   [2]  S40.25              → amount  ($ misread as S)
+#   [3]  Macetero personalizable → concept
+#   [4]  18/05/2023 09.37.00 → date
+#   [5]  Tu pago ha sido realizado de manera exitosa (status — ignored)
+#   [6]  Lourdes Beltrán     → sender_name
+#   [7]  Tarjeta de crédito  → label (card type)
+#   [8]  Oo4XXX5331          → origin_account  (number only)
+#   [9]  El jardín de Sele   → receiver_name
+#   [10] RUC                 → label
+#   [11] 0918376153001       → destination_account (number only)
+#   [12] IVA                 → label
+#   [13] S5.00               → IVA amount (ignored)
+#   [14] (incluido)          → label
+#   [15] Monto pagado        → label
+#   [16] $40.25              → total amount
+
+id: banco_guayaquil_pago_digital
+name: Banco Guayaquil - Pago Digital (App)
+bank_name: Banco Guayaquil
+payment_type: transfer
+
+defaults:
+  currency: USD
+
+identify:
+  # Use reliably-OCR'd body text — NOT the stylised logo which EasyOCR garbles.
+  required:
+    - "Monto pagado"
+    - "pago ha sido realizado"
+  optional:
+    - "Banco Guayaquil"
+    - "guayaquil"
+    - "RUC"
+    - "IVA"
+    - "Tarjeta de crédito"
+
+# ── Positional extraction (primary) ─────────────────────────────────────────
+# Index values are 0-based positions in the top-to-bottom sorted OCR block list.
+# "anchor: top_right" selects the rightmost block in the top 25% of the image.
+layout:
+  sort: top_to_bottom
+  fields:
+    reference_number:
+      anchor: top_right          # "No.0003375906" — top-right corner
+      extract: "No\\.?\\s*(\\d+)"
+
+    amount:
+      index: 2                   # "S40.25" ($ often misread as S)
+      extract: "[S$]?\\s*([\\d,.]+)"
+
+    concept:
+      index: 3                   # "Macetero personalizable"
+
+    date:
+      index: 4                   # "18/05/2023 09.37.00" (colons may be dots)
+      extract: "(\\d{2}[/.]\\d{2}[/.]\\d{4}(?:[\\s]+\\d{2}[.:]\\d{2}[.:]\\d{2})?)"
+
+    sender_name:
+      index: 6                   # "Lourdes Beltrán"
+
+    origin_account:
+      index: 8                   # "Oo4XXX5331" (number only, label is block 7)
+
+    receiver_name:
+      index: 9                   # "El jardín de Sele"
+
+    destination_account:
+      index: 11                  # "0918376153001" (number only, label "RUC" is block 10)
+
+# ── Regex fallback (used when positional extraction fails) ───────────────────
+fields:
+  amount:
+    - "Monto\\s+pagado[:\\s$S]*([\\d,\\.]+)"
+    - "[S$]\\s*([\\d,\\.]+)"
+
+  currency:
+    - "\\b(USD)\\b"
+
+  date:
+    - "(\\d{2}[/.]\\d{2}[/.]\\d{4})\\s+\\d{2}[.:]\\d{2}[.:]\\d{2}"
+
+  reference_number:
+    - "No\\.?\\s*(\\d{6,12})"
+
+  origin_account:
+    - "(?:Tarjeta\\s+de\\s+cr[eé]dito[\\s\\n-]*)?([0-9OoX*]{6,20})"
+
+  destination_account:
+    - "RUC[\\s\\n-]*(\\d{10,15})"
+
+  sender_name:
+    - "([A-ZÁÉÍÓÚÑ][a-záéíóúñA-Z\\s]{3,50})\\s*\\n(?:Tarjeta|Cuenta)"
+
+  receiver_name:
+    - "([A-Za-záéíóúñÁÉÍÓÚÑ][^\\n]{3,60})\\s*\\nRUC"

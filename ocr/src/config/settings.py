@@ -1,0 +1,53 @@
+import secrets
+from typing import List
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    # App
+    APP_NAME: str = "OCR Payment Service"
+    APP_VERSION: str = "1.0.0"
+    DEBUG: bool = False
+
+    # Server
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+
+    # JWT / OAuth2
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # OAuth2 clients — comma-separated "client_id:client_secret" pairs.
+    # Secrets are stored hashed at runtime. Change in production.
+    OAUTH_CLIENTS: str = "backend-client:super-secret-change-in-production"
+
+    # OCR
+    OCR_LANGUAGES: str = "es,en"  # comma-separated language codes
+    OCR_GPU: bool = False
+
+    # Upload limits
+    MAX_FILE_SIZE_MB: int = 10
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, value):
+        if isinstance(value, str) and value.lower() in {"release", "production", "prod"}:
+            return False
+        return value
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+    @property
+    def max_file_size_bytes(self) -> int:
+        return self.MAX_FILE_SIZE_MB * 1024 * 1024
+
+    @property
+    def ocr_language_list(self) -> List[str]:
+        return [lang.strip() for lang in self.OCR_LANGUAGES.split(",") if lang.strip()]
+
+
+settings = Settings()

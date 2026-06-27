@@ -51,7 +51,29 @@ export class CondoMorosidadComponent implements OnInit {
 
   load() {
     this.loading = true;
-    this.svc.getMorosidadReport().subscribe({ next: (o) => { this.owners = o; this.loading = false; }, error: () => this.loading = false });
+    this.svc.getMorosidadReport().subscribe({
+      next: (owners) => {
+        this.owners = [...owners]
+          .map(owner => ({
+            ...owner,
+            debtPeriods: [...(owner.debtPeriods || [])].sort((first, second) =>
+              first.year - second.year || first.month - second.month,
+            ),
+            moraPayments: [...(owner.moraPayments || [])].sort((first, second) => {
+              const firstPeriod = (first.debtYear ?? Number.MAX_SAFE_INTEGER) * 12 + (first.debtMonth ?? 12);
+              const secondPeriod = (second.debtYear ?? Number.MAX_SAFE_INTEGER) * 12 + (second.debtMonth ?? 12);
+              return firstPeriod - secondPeriod ||
+                String(first.paymentDate).localeCompare(String(second.paymentDate));
+            }),
+          }))
+          .sort((first, second) => first.apartmentNumber.localeCompare(second.apartmentNumber, 'es', {
+            numeric: true,
+            sensitivity: 'base',
+          }));
+        this.loading = false;
+      },
+      error: () => this.loading = false,
+    });
   }
 
   openDebtPeriods(owner: CondoOwner) {

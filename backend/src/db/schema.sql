@@ -1,5 +1,5 @@
 -- ============================================================
--- RRHH Admin + Condominio — PostgreSQL Schema v5
+-- HABBITA — PostgreSQL Schema v5
 -- Idempotente: seguro para bases existentes o nuevas.
 -- Compatible con PostgreSQL 10+
 -- Los UUIDs son generados por el backend (VARCHAR 36)
@@ -334,6 +334,16 @@ CREATE TABLE IF NOT EXISTS shift_templates (
   is_active  BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+-- Plantillas base para la rotación de guardias. Los nombres existentes no se
+-- reemplazan, por lo que es seguro ejecutar el schema en instalaciones activas.
+INSERT INTO shift_templates (id, name, start_time, end_time, color)
+VALUES
+  ('system-shift-diurno',     'Diurno',     '06:00', '14:00', '#22C55E'),
+  ('system-shift-vespertino', 'Vespertino', '14:00', '22:00', '#F59E0B'),
+  ('system-shift-nocturno',   'Nocturno',   '22:00', '06:00', '#6366F1'),
+  ('system-shift-descanso',   'Descanso',   '00:00', '00:00', '#64748B')
+ON CONFLICT (name) DO NOTHING;
 
 -- ============================================================
 -- ASIGNACIONES DE TURNO

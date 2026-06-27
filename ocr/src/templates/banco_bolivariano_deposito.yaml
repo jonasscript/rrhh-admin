@@ -1,0 +1,28 @@
+# Comprobante físico de depósito - Banco Bolivariano
+# Las fotos suelen llegar giradas; el OCR las rota antes de aplicar este template.
+
+id: banco_bolivariano_deposito
+name: Banco Bolivariano - Depósito
+bank_name: Banco Bolivariano
+payment_type: deposit
+# The reference/account lines are too degraded in the reference photo to
+# return a plausible but incorrect value through generic extraction.
+strict_fields: true
+
+identify:
+  required:
+    - "Banco Bolivariano"
+    - "Comprobante"
+  optional:
+    - "DOLARES"
+    - "DEP"
+    - "Transacción"
+    - "MulticanalesBB"
+
+defaults:
+  currency: USD
+
+fields:
+  date:
+    # The timestamp may be merged by OCR (for example, "02237.59").
+    - "(\\d{2}/\\d{2}/\\d{4})"

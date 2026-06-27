@@ -1,0 +1,42 @@
+# Aviso de abono recibido - Banca Virtual Banco del Pacífico (BdP)
+# Formato verificado en correo móvil: "Banca Virtual: has recibido dinero".
+
+id: banco_pacifico_abono_recibido
+name: Banco del Pacífico - Abono recibido (Banca Virtual)
+bank_name: Banco del Pacífico
+payment_type: transfer
+
+identify:
+  required:
+    - "Banca Virtual"
+    - "recibido dinero"
+  optional:
+    - "BdP"
+    - "Valor que recibiste"
+    - "Número de comprobante"
+    - "Para la cuenta"
+
+defaults:
+  currency: USD
+
+fields:
+  amount:
+    - "Valor\\s+que\\s+recibiste:\\s*\\$\\s*([\\d,.]+)"
+
+  date:
+    - "Fecha\\s+y\\s+hora:\\s*(\\d{2}-\\d{2}-\\d{4})"
+
+  reference_number:
+    - "N[uú]mero\\s+de\\s+comprobante:\\s*\\n\\s*(\\d{8,30})"
+
+  origin_account:
+    - "Desde\\s+la\\s+cuenta:\\s*([0-9Xx*]{4,20})"
+
+  destination_account:
+    - "Para\\s+la\\s+cuenta:\\s*\\n?\\s*([0-9Xx*]{4,20})"
+
+  sender_name:
+    - "Desde\\s+la\\s+cuenta:.{0,80}?Perteneciente\\s+a:\\s*([^\\n]{3,80}(?:\\n(?!Para\\s+la\\s+cuenta)[^\\n]{2,80})?)"
+
+  receiver_name:
+    - "Para\\s+la\\s+cuenta:.{0,100}?Perteneciente\\s+a:\\s*([^\\n]{3,80}(?:\\n(?!Banco\\s+de\\s+destino)[^\\n]{2,80})?)"

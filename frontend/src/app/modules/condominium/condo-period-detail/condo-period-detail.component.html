@@ -7,13 +7,16 @@
           <div>
             <a routerLink="/condominium/periods" class="back-link"><i class="pi pi-arrow-left mr-1"></i>Períodos</a>
             <h2>{{ monthName }} {{ period.year }}</h2>
-            <p-tag [value]="period.status" [severity]="statusSeverity(period.status)" />
+            <p-tag [value]="periodStatusLabel(period.status)" [severity]="statusSeverity(period.status)" />
           </div>
           <div class="header-actions">
             @if (period.status === 'DRAFT') {
               <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="generate()" [loading]="generating"></button>
             }
             @if (period.payments?.length && period.status !== 'CLOSED') {
+              <input #movementPdfInput type="file" accept="application/pdf,.pdf" hidden (change)="onMovementPdfSelected($event)" />
+              <button pButton icon="pi pi-file-pdf" label="Importar movimientos PDF" severity="secondary"
+                (click)="movementPdfInput.click()" [loading]="importingMovements"></button>
               <button pButton icon="pi pi-images" label="Cargar comprobantes" severity="info" (click)="openBulkUpload()"></button>
               <button pButton icon="pi pi-send" label="Enviar correos" severity="success" (click)="sendEmails()" [loading]="sending"></button>
             }
@@ -23,7 +26,7 @@
           </div>
         </div>
 
-        <!-- Period Summary -->
+        <!-- Resumen del período -->
         <div class="summary-grid">
           <div class="summary-card">
             <span class="label">Gastos fijos</span>
@@ -51,7 +54,7 @@
           }
         </div>
 
-        <!-- Payments Table -->
+        <!-- Tabla de pagos -->
         <p-table [value]="period.payments || []" stripedRows responsiveLayout="scroll">
           <ng-template pTemplate="header">
             <tr>
@@ -95,7 +98,10 @@
               </td>
               <td>{{ payment.paymentDate ? (payment.paymentDate | date:'dd/MM/yy') : '—' }}</td>
               <td>
-                @if (payment.proofUrl) {
+                @if (payment.wasOverdue && (payment.moraPaymentProofs?.length || 0) > 0) {
+                  <button pButton label="Ver comprobante de mora" icon="pi pi-paperclip" [text]="true" size="small"
+                    class="proof-link" (click)="openMoraProofs(payment)"></button>
+                } @else if (payment.proofUrl) {
                   <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
                     class="proof-link" (click)="openProofPreview(payment)"></button>
                 } @else {
@@ -103,8 +109,13 @@
                 }
               </td>
               <td>
-                <p-tag [value]="paymentStatusLabel(payment.status)"
-                  [severity]="paymentStatusSeverity(payment.status)" />
+                <div class="flex flex-column gap-1 align-items-start">
+                  <p-tag [value]="paymentStatusLabel(payment.status)"
+                    [severity]="paymentStatusSeverity(payment.status)" />
+                  @if (payment.wasOverdue) {
+                    <p-tag value="Mora saldada" severity="warning" pTooltip="Esta cuota estuvo en mora y fue pagada posteriormente." tooltipPosition="left" [appendTo]="'body'" />
+                  }
+                </div>
               </td>
               <td class="payment-actions">
                 <button pButton icon="pi pi-dollar" [rounded]="true" [text]="true"
@@ -137,8 +148,17 @@
       </div>
     }
 
-    <!-- Register Payment Dialog -->
-    <p-dialog [(visible)]="showPaymentDialog" header="Registrar Pago" [modal]="true" [style]="{width: '440px'}">
+    <p-dialog [visible]="showMovementLoading" header="Cargando pagos" [modal]="true" [closable]="false"
+      [closeOnEscape]="false" [style]="{ width: '360px', maxWidth: '90vw' }">
+      <div class="flex flex-column align-items-center gap-3 text-center py-3">
+        <i class="pi pi-spin pi-spinner text-4xl text-primary"></i>
+        <strong>Analizando los movimientos del PDF…</strong>
+        <span class="text-color-secondary text-sm">Estamos leyendo los ingresos y buscando coincidencias con los propietarios.</span>
+      </div>
+    </p-dialog>
+
+    <!-- Diálogo para registrar pago -->
+    <p-dialog [(visible)]="showPaymentDialog" header="Registrar pago" [modal]="true" [style]="{width: '440px'}">
       @if (selectedPayment) {
         <div class="payment-summary">
           <span><strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong> — {{ selectedPayment.owner?.fullName }}</span>
@@ -158,18 +178,22 @@
             <label>Monto pagado *</label>
             <p-inputNumber formControlName="amountPaid" [min]="0.01" [minFractionDigits]="2" prefix="$" class="w-full" inputStyleClass="w-full" />
           </div>
-          @if (paymentExcess > 0) {
+          @if (hasMoraPriority) {
             <div class="mora-application">
               <i class="pi pi-info-circle"></i>
               <div>
-                <strong>El pago supera el saldo de este período por ${{ paymentExcess | number:'1.2-2' }}.</strong>
-                @if (moraToApply > 0) {
-                  <span>Se descontarán ${{ moraToApply | number:'1.2-2' }} de la mora del propietario. La mora final será ${{ finalMoraAfterPayment | number:'1.2-2' }}.</span>
-                } @else {
-                  <span>El propietario no tiene mora disponible para aplicar este excedente.</span>
-                }
-                @if (paymentExcess > ownerMoraAvailable) {
-                  <small>El excedente supera la mora disponible (${{ ownerMoraAvailable | number:'1.2-2' }}). Reduce el valor para continuar.</small>
+                <strong>Este propietario tiene una mora de ${{ ownerMoraAvailable | number:'1.2-2' }}.</strong>
+                <span>El pago se aplicará primero a la mora, desde el período más antiguo hasta el más reciente.</span>
+                @if (enteredPaymentAmount > 0) {
+                  <span>Se abonarán ${{ moraToApply | number:'1.2-2' }} a mora; su saldo quedará en ${{ finalMoraAfterPayment | number:'1.2-2' }}.</span>
+                  @if (amountForCurrentPeriod > 0) {
+                    <span>El remanente de ${{ amountForCurrentPeriod | number:'1.2-2' }} se registrará en el período actual.</span>
+                  } @else {
+                    <span>Con este monto todavía no se abonará al período actual.</span>
+                  }
+                  @if (!paymentAmountAllowed) {
+                    <small>El monto supera la suma de la mora y el saldo pendiente de este período. Reduce el valor para continuar.</small>
+                  }
                 }
               </div>
             </div>
@@ -223,15 +247,45 @@
       }
     </p-dialog>
 
+    <p-dialog [(visible)]="showMoraProofsDialog" header="Comprobantes de mora saldada" [modal]="true"
+      [style]="{ width: '720px', maxWidth: '96vw' }" [draggable]="false">
+      @if (selectedMoraProofPayment) {
+        <p class="mt-0">
+          Depto. <strong>{{ selectedMoraProofPayment.owner?.apartmentNumber }}</strong> —
+          {{ selectedMoraProofPayment.owner?.fullName }}
+        </p>
+        <p-table [value]="selectedMoraProofPayment.moraPaymentProofs || []" stripedRows styleClass="p-datatable-sm">
+          <ng-template pTemplate="header">
+            <tr><th>Fecha</th><th>Abono aplicado</th><th>Notas</th><th>Comprobante</th></tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-proof>
+            <tr>
+              <td>{{ proof.paymentDate | date:'dd/MM/yy' }}</td>
+              <td>{{ proof.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+              <td>{{ proof.notes || '—' }}</td>
+              <td>
+                @if (proof.proofUrl) {
+                  <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
+                    (click)="openProofPreviewUrl(proof.proofUrl)"></button>
+                } @else {
+                  <span class="text-color-secondary text-sm">Sin comprobante</span>
+                }
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      }
+    </p-dialog>
+
     <!-- Carga masiva de comprobantes del período actual -->
-    <p-dialog [(visible)]="showBulkUpload" header="Carga de comprobantes con OCR" [modal]="true"
+    <p-dialog [(visible)]="showBulkUpload" header="Carga de comprobantes y movimientos" [modal]="true"
       [style]="{ width: '900px', maxWidth: '96vw' }" [draggable]="false">
       @if (period) {
         <div class="bulk-upload">
           <div class="bulk-intro">
             <div>
               <strong>{{ monthName }} {{ period.year }}</strong>
-              <p>Los comprobantes se leen uno por uno. Confirma cada coincidencia antes de subirla al bucket y registrarla en la alícuota.</p>
+              <p>Los comprobantes y movimientos se revisan uno por uno. Confirma cada coincidencia antes de registrarla en la alícuota.</p>
             </div>
             <label for="detail-bulk-receipts" class="p-button p-component">
               <i class="pi pi-upload p-button-icon p-button-icon-left"></i>
@@ -249,11 +303,14 @@
             <div class="bulk-empty"><i class="pi pi-images"></i><span>Selecciona uno o varios JPG, PNG, WEBP o PDF.</span></div>
           } @else {
             <div class="receipt-list">
-              @for (receipt of bulkReceipts; track receipt.file.name + receipt.file.lastModified) {
+              @for (receipt of bulkReceipts; track receipt.id || receipt.file.name + receipt.file.lastModified) {
                 <article class="receipt-card" [class.receipt-card--error]="receipt.status === 'error'" [class.receipt-card--done]="receipt.status === 'confirmed'">
                   <div class="receipt-file">
                     <i class="pi" [class.pi-file]="receipt.status !== 'confirmed'" [class.pi-check-circle]="receipt.status === 'confirmed'"></i>
-                    <div><strong>{{ receipt.file.name }}</strong><small>{{ (receipt.file.size / 1024).toFixed(1) }} KB</small></div>
+                    <div>
+                      <strong>{{ receipt.description ? 'Movimiento: ' + receipt.description : receipt.file.name }}</strong>
+                      <small>{{ receipt.description ? (receipt.paymentDate + ' · $' + (receipt.amount || 0).toFixed(2)) : ((receipt.file.size / 1024).toFixed(1) + ' KB') }}</small>
+                    </div>
                   </div>
 
                   @if (receipt.status === 'queued' || receipt.status === 'scanning') {
@@ -263,13 +320,13 @@
                       <button pButton label="Asignar manualmente" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
                     </div>
                   } @else if (receipt.status === 'confirming') {
-                    <div class="receipt-state"><i class="pi pi-spin pi-cloud-upload"></i> Subiendo al bucket y registrando pago…</div>
+                    <div class="receipt-state"><i class="pi pi-spin pi-cloud-upload"></i> Registrando pago con el PDF de movimientos…</div>
                   } @else if (receipt.status === 'confirmed') {
-                    <div class="receipt-state receipt-state--success"><i class="pi pi-check-circle"></i> Comprobante subido y pago registrado.</div>
+                    <div class="receipt-state receipt-state--success"><i class="pi pi-check-circle"></i> Pago registrado con el PDF de movimientos.</div>
                   } @else {
                     <div class="receipt-result">
                       <div class="ocr-data">
-                        <span><i class="pi pi-user"></i> {{ receipt.scan?.extractedData?.sender_name || 'Remitente no detectado' }}</span>
+                        <span><i class="pi pi-user"></i> {{ receipt.description ? 'Descripción: ' : '' }}{{ receipt.scan?.extractedData?.sender_name || 'Remitente no detectado' }}</span>
                         <span><i class="pi pi-building-columns"></i> {{ receipt.scan?.extractedData?.bank || 'Banco no detectado' }}</span>
                         @if (ocrConfidence(receipt) !== null) {
                           <span>Confianza: {{ ((ocrConfidence(receipt) ?? 0) * 100) | number:'1.0-0' }}%</span>
@@ -311,16 +368,19 @@
                               <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
                               <button pButton icon="pi pi-check" label="Confirmar registro" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
                             </div>
-                            @if (!isReceiptDateInPeriod(receipt)) { <small class="receipt-warning">La fecha debe pertenecer al período seleccionado.</small> }
+                            <!-- @if (!isReceiptDateInPeriod(receipt)) { <small class="receipt-warning">La fecha debe pertenecer al período seleccionado.</small> } -->
                           }
                         </div>
                       } @else if (receipt.match) {
                         <div class="receipt-match">
                           <div class="receipt-destination">
-                            <span class="destination-label"><i class="pi pi-map-marker"></i> Destino detectado</span>
+                            <span class="destination-label"><i class="pi pi-map-marker"></i> {{ receipt.suggestedByAmount ? 'Destino sugerido por valor' : 'Destino detectado' }}</span>
                             <strong>{{ periodLabel(period) }} · Depto. {{ receipt.match.owner.apartmentNumber }}</strong>
                             <span>{{ receipt.match.owner.fullName }} · Alícuota {{ receipt.match.aliquotAmount | currency:'USD':'symbol-narrow':'1.2-2' }} · Pendiente {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                           </div>
+                          @if (receipt.suggestedByAmount) {
+                            <span class="receipt-warning"><i class="pi pi-info-circle"></i> No se encontró coincidencia por nombre. Confirma que el valor del pago corresponde a este departamento.</span>
+                          }
                           @if (receipt.match.paymentStatus === 'PAID') {
                             <span class="receipt-warning"><i class="pi pi-info-circle"></i> Esta alícuota ya está pagada.</span>
                           } @else {
@@ -354,7 +414,7 @@
       }
     </p-dialog>
 
-    <!-- Extra Charge Dialog -->
+    <!-- Diálogo de cargos adicionales -->
     <p-dialog [(visible)]="showExtraDialog" header="Cargos Adicionales"
       [modal]="true" [style]="{width:'520px'}" [closable]="true">
       @if (selectedPayment) {

@@ -4,7 +4,7 @@ import { ApiService } from '../../core/services/api.service';
 import {
   AliquotPayment, BalanceReport, CondoConfig, CondoExpenseItem, CondoExpenseItemsResponse,
   CondoExpensePeriod, CondoFundEntry, CondoFundSummary, CondoOwner, CondoPeriodExpenseItem,
-  OcrScanResult, PaymentExtra, ProvisionCatalogItem,
+  MovementImportResult, OcrScanResult, PaymentExtra, ProvisionCatalogItem,
 } from '../models/models';
 
 @Injectable({ providedIn: 'root' })
@@ -96,15 +96,25 @@ export class CondominiumService extends ApiService {
     return this.postFormData('/condominium/ocr/scan', formData);
   }
 
-  confirmOcrPayment(paymentId: string, file: File, data: {
-    amount: number; paymentDate: string; ocrSenderName?: string | null; ocrBank?: string | null;
-  }): Observable<AliquotPayment> {
+  importMovementPdf(file: File, periodId: string): Observable<MovementImportResult> {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('periodId', periodId);
+    return this.postFormData('/condominium/movements/scan', formData);
+  }
+
+  confirmOcrPayment(paymentId: string, file: File | null, data: {
+    amount: number; paymentDate: string; ocrSenderName?: string | null; ocrBank?: string | null;
+    movementProofUrl?: string; movementProofPublicId?: string;
+  }): Observable<AliquotPayment> {
+    const formData = new FormData();
+    if (file) formData.append('file', file);
     formData.append('amount', String(data.amount));
     formData.append('paymentDate', data.paymentDate);
     if (data.ocrSenderName) formData.append('ocrSenderName', data.ocrSenderName);
     if (data.ocrBank) formData.append('ocrBank', data.ocrBank);
+    if (data.movementProofUrl) formData.append('movementProofUrl', data.movementProofUrl);
+    if (data.movementProofPublicId) formData.append('movementProofPublicId', data.movementProofPublicId);
     return this.postFormData(`/condominium/payments/${paymentId}/ocr-confirm`, formData);
   }
 

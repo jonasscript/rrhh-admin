@@ -1,0 +1,41 @@
+id: bancolombia
+name: Bancolombia
+bank_name: Bancolombia
+payment_type: transfer
+
+identify:
+  required:
+    - "Bancolombia"
+  optional:
+    - "Transferencia"
+    - "Transacci"
+    - "PSE"
+
+fields:
+  amount:
+    - "(?:Valor\\s+de\\s+la\\s+transacci[oó]n|Valor|Monto)[:\\s$]*\\$?\\s*([\\d,\\.]+)"
+    - "(?:Total)[:\\s]*\\$?\\s*([\\d,\\.]+)"
+
+  currency:
+    - "\\b(COP|USD)\\b"
+
+  date:
+    - "(?:Fecha)[:\\s]*(\\d{1,2}/\\d{1,2}/\\d{4})"
+    - "(?:Fecha)[:\\s]*(\\d{4}-\\d{2}-\\d{2})"
+    - "(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    - "(?:N[uú]mero\\s+de\\s+comprobante|Comprobante|Referencia|Aprobaci[oó]n)[:\\s]*([0-9A-Z]{6,20})"
+    - "(?:C[oó]digo\\s+de\\s+transacci[oó]n)[:\\s]*([0-9A-Z]{6,20})"
+
+  origin_account:
+    - "(?:Cuenta\\s+origen|Cuenta\\s+d[eé]bito|De)[:\\s]*([*\\d]{8,20})"
+
+  destination_account:
+    - "(?:Cuenta\\s+destino|Cuenta\\s+cr[eé]dito|A)[:\\s]*([*\\d]{8,20})"
+
+  sender_name:
+    - "(?:Nombre\\s+ordenante|Titular\\s+de\\s+cuenta|Ordenante)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"
+
+  receiver_name:
+    - "(?:Beneficiario|Destinatario)[:\\s]+([A-ZÁÉÍÓÚÑ][\\wáéíóúñÁÉÍÓÚÑ\\s]{4,50})"

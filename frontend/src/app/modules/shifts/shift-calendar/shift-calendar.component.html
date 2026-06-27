@@ -1,78 +1,142 @@
 <p-toast />
 
-    <div class="page-header">
-      <h1 class="page-title">Turnos</h1>
-      <p-button label="Asignar turno" icon="pi pi-plus" (onClick)="showDialog = true" />
+<div class="shifts-page">
+  <div class="page-header shifts-header">
+    <div>
+      <h1 class="page-title">Turnos de guardias</h1>
+      <p class="page-subtitle">Rotación diaria de mañana, tarde, noche y descanso.</p>
     </div>
-
-    <!-- Navegación de semana -->
-    <div class="flex align-items-center gap-3 mb-4">
-      <p-button icon="pi pi-chevron-left" [text]="true" (onClick)="prevWeek()" />
-      <span class="font-semibold text-lg">
-        {{ weekStart() | date:'dd MMM' }} — {{ weekEnd() | date:'dd MMM yyyy' }}
-      </span>
-      <p-button icon="pi pi-chevron-right" [text]="true" (onClick)="nextWeek()" />
-      <p-button label="Hoy" severity="secondary" [text]="true" (onClick)="goToday()" />
+    <div class="header-actions">
+      <p-button label="Asignar manualmente" icon="pi pi-pencil" severity="secondary" [outlined]="true"
+        (onClick)="openManualAssignment()" />
+      <p-button label="Generar rotación" icon="pi pi-sync" (onClick)="openGenerateDialog()" />
+      <p-button label="Exportar PDF" icon="pi pi-file-pdf" severity="danger" [outlined]="true"
+        [disabled]="!scheduleComplete()" [loading]="downloading()" (onClick)="exportPdf()" />
     </div>
+  </div>
 
-    <!-- Grilla de turnos -->
-    <div class="overflow-x-auto">
-      <table class="w-full border-collapse text-sm">
-        <thead>
-          <tr>
-            <th class="p-2 border-1 border-200 bg-100" style="min-width:140px">Empleado</th>
-            @for (day of weekDays(); track day) {
-              <th class="p-2 border-1 border-200 bg-100 text-center" style="min-width:110px">
-                {{ day | date:'EEE dd' }}
-              </th>
-            }
-          </tr>
-        </thead>
-        <tbody>
-          @for (emp of uniqueEmployees(); track emp.id) {
-            <tr>
-              <td class="p-2 border-1 border-200 font-medium">{{ emp.name }}</td>
-              @for (day of weekDays(); track day) {
-                <td class="p-2 border-1 border-200 text-center">
-                  @for (a of getAssignment(emp.id, day); track a.id) {
-                    <div class="border-round px-2 py-1 text-white text-xs"
-                         [style.background]="a.color">
-                      {{ a.shift_name }}<br>{{ a.start_time }}–{{ a.end_time }}
-                    </div>
+  <div class="month-toolbar">
+    <div class="month-navigation">
+      <p-button icon="pi pi-chevron-left" [text]="true" ariaLabel="Mes anterior" (onClick)="prevMonth()" />
+      <h2>{{ currentMonth() | date:'MMMM yyyy' }}</h2>
+      <p-button icon="pi pi-chevron-right" [text]="true" ariaLabel="Mes siguiente" (onClick)="nextMonth()" />
+      <p-button label="Mes actual" severity="secondary" [text]="true" (onClick)="goToday()" />
+    </div>
+    <div class="schedule-status" [class.complete]="scheduleComplete()">
+      <i [class]="scheduleComplete() ? 'pi pi-check-circle' : 'pi pi-info-circle'"></i>
+      @if (scheduleComplete()) {
+        Horario completo: ya puedes editarlo o exportarlo a PDF.
+      } @else {
+        {{ filledCells() }} de {{ expectedCells() }} turnos completados. Completa el horario para exportarlo.
+      }
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="loading-state"><i class="pi pi-spin pi-spinner"></i> Cargando horario…</div>
+  } @else {
+    <div class="schedule-month">
+      @for (week of weekGroups(); track $index) {
+        <section class="schedule-week">
+          <h3>{{ weekLabel(week) }}</h3>
+          <div class="schedule-table-wrap">
+            <table class="schedule-table">
+              <thead>
+                <tr>
+                  <th class="role-column">Turno</th>
+                  @for (day of week; track $index) {
+                    <th [class.outside-month]="!day" [class.today]="day && isToday(day)">
+                      @if (day) { {{ day | date:'EEE d' }} }
+                    </th>
                   }
-                </td>
-              }
-            </tr>
-          }
-          @if (uniqueEmployees().length === 0) {
-            <tr><td [attr.colspan]="8" class="text-center p-4 text-500">Sin asignaciones esta semana</td></tr>
-          }
-        </tbody>
-      </table>
+                </tr>
+              </thead>
+              <tbody>
+                @for (role of rotationRoles(); track role.key) {
+                  <tr>
+                    <th class="role-cell">
+                      <span class="role-dot" [style.background]="role.color"></span>
+                      <span>{{ role.label }}</span>
+                      <small>{{ role.schedule }}</small>
+                    </th>
+                    @for (day of week; track $index) {
+                      <td [class.outside-month]="!day" [class.today]="day && isToday(day)">
+                        @if (day; as activeDay) {
+                          @if (getRoleAssignment(activeDay, role); as assignment) {
+                            <button type="button" class="schedule-cell assigned" [style.--shift-color]="role.color"
+                              (click)="openManualAssignment(activeDay, role)">
+                              <strong>{{ employeeName(assignment) }}</strong>
+                              @if (role.key !== 'rest') { <small>{{ shortTime(assignment.start_time) }} – {{ shortTime(assignment.end_time) }}</small> }
+                            </button>
+                          } @else {
+                            <button type="button" class="schedule-cell" [style.--shift-color]="role.color"
+                              (click)="openManualAssignment(activeDay, role)">
+                              <span class="empty-cell"><i class="pi pi-plus"></i> Asignar</span>
+                            </button>
+                          }
+                        }
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      }
     </div>
+  }
+</div>
 
-    <!-- Diálogo asignar turno -->
-    <p-dialog header="Asignar turno" [(visible)]="showDialog" [modal]="true" [style]="{width:'420px'}">
-      <div class="flex flex-column gap-3 mt-2">
-        <div>
-          <label class="block mb-1">Empleado *</label>
-          <p-dropdown [(ngModel)]="newAssign.employeeId" [options]="employees()"
-                      optionLabel="label" optionValue="value" class="w-full"
-                      placeholder="Seleccionar empleado" [filter]="true" />
-        </div>
-        <div>
-          <label class="block mb-1">Turno *</label>
-          <p-dropdown [(ngModel)]="newAssign.shiftTemplateId" [options]="templates()"
-                      optionLabel="label" optionValue="value" class="w-full" placeholder="Seleccionar turno" />
-        </div>
-        <div>
-          <label class="block mb-1">Fecha *</label>
-          <p-calendar [(ngModel)]="newAssign.date" dateFormat="yy-mm-dd"
-                      [showIcon]="true" class="w-full" />
-        </div>
-      </div>
-      <ng-template pTemplate="footer">
-        <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showDialog = false" />
-        <p-button label="Asignar" icon="pi pi-check" (onClick)="assign()" [loading]="saving()" />
-      </ng-template>
-    </p-dialog>
+<p-dialog header="Generar rotación automática" [(visible)]="showGenerateDialog" [modal]="true"
+  [draggable]="false" [style]="{ width: 'min(540px, 96vw)' }">
+  <div class="dialog-intro">
+    <i class="pi pi-sync"></i>
+    <span>Se generará el horario de {{ currentMonth() | date:'MMMM yyyy' }} con cobertura continua de las 24 horas. La rotación Mañana → Tarde → Noche → Descanso maximiza el tiempo de descanso entre turnos. Las plantillas se crearán o reutilizarán automáticamente.</span>
+  </div>
+  <div class="form-grid">
+    <div class="field field-full">
+      <label>Guardias (en orden de inicio) *</label>
+      <p-multiSelect [(ngModel)]="generation.employeeIds" [options]="guards()" optionLabel="label" optionValue="value"
+        placeholder="Selecciona los cuatro guardias" [filter]="true" [maxSelectedLabels]="1"
+        selectedItemsLabel="{0} guardias seleccionados" appendTo="body" styleClass="w-full" />
+      <small>El primer guardia inicia en Mañana; los siguientes en Tarde, Noche y Descanso.</small>
+    </div>
+    <div class="field field-full replace-option">
+      <p-checkbox [(ngModel)]="generation.overwrite" [binary]="true" inputId="overwrite" />
+      <label for="overwrite">Reemplazar los turnos que ya existan en este mes</label>
+    </div>
+  </div>
+  <ng-template pTemplate="footer">
+    <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showGenerateDialog = false" />
+    <p-button label="Generar horario" icon="pi pi-check" [loading]="generating()" (onClick)="generateRotation()" />
+  </ng-template>
+</p-dialog>
+
+<p-dialog [header]="manual.assignmentId ? 'Editar turno' : 'Asignar turno manualmente'" [(visible)]="showManualDialog"
+  [modal]="true" [draggable]="false" [style]="{ width: 'min(460px, 96vw)' }">
+  <div class="manual-form">
+    <div class="field">
+      <label>Fecha *</label>
+      <p-calendar [(ngModel)]="manual.date" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
+    </div>
+    <div class="field">
+      <label>Turno *</label>
+      <p-dropdown [(ngModel)]="manual.shiftTemplateId" [options]="templates()" optionLabel="name" optionValue="id"
+        placeholder="Seleccionar turno" styleClass="w-full" />
+    </div>
+    <div class="field">
+      <label>Guardia *</label>
+      <p-dropdown [(ngModel)]="manual.employeeId" [options]="guards()" optionLabel="label" optionValue="value"
+        placeholder="Seleccionar guardia" [filter]="true" styleClass="w-full" />
+    </div>
+    <p class="manual-help">Puedes corregir cualquier celda del horario. Un guardia solo puede tener un turno por día.</p>
+  </div>
+  <ng-template pTemplate="footer">
+    @if (manual.assignmentId) {
+      <p-button label="Eliminar" icon="pi pi-trash" severity="danger" [text]="true" [loading]="saving()" (onClick)="removeManualAssignment()" />
+    }
+    <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showManualDialog = false" />
+    <p-button label="Guardar turno" icon="pi pi-check" [loading]="saving()" (onClick)="saveManualAssignment()" />
+  </ng-template>
+</p-dialog>

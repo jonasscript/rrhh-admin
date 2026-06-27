@@ -1,0 +1,51 @@
+# Comprobante de depósito en ventanilla - Banco Guayaquil (físico)
+# Formato: ticket impreso rosa/fucsia
+# Ejemplo: "DEPOSITO CUENTA CORRIENTE # 327609"
+#          "Cta. Corriente: 28519346 Nombre: UNIVERSIDAD PARTICULAR..."
+#          "TOTAL: 175.08 175.08"
+#          "F1V3 DVD 1 2024/02/07 14:23:22"
+
+id: banco_guayaquil_deposito
+name: Banco Guayaquil - Depósito Ventanilla
+bank_name: Banco Guayaquil
+payment_type: deposit
+
+defaults:
+  currency: USD
+
+identify:
+  required:
+    - "Banco Guayaquil"
+    - "DEPOSITO CUENTA CORRIENTE"
+  optional:
+    - "COMPROBANTE DE TRANSACCION"
+    - "Cta. Corriente"
+    - "Efectivo"
+    - "N.Dcto"
+
+fields:
+  amount:
+    # "TOTAL:    175.08    175.08   N.Dcto.:"
+    - "TOTAL[:\\s]+(\\d[\\d,\\.]+)"
+    # Monto en efectivo si no hay TOTAL
+    - "Efectivo[:\\s]+(\\d[\\d,\\.]+)"
+
+  currency:
+    # Estos comprobantes usan dólares pero escriben "Dólares" como encabezado de columna
+    - "\\b(USD)\\b"
+
+  date:
+    # "2024/02/07 14:23:22" — aparece en la línea de código final del ticket
+    - "(\\d{4}/\\d{2}/\\d{2})\\s+\\d{2}:\\d{2}:\\d{2}"
+
+  reference_number:
+    # "DEPOSITO CUENTA CORRIENTE # 327609"
+    - "DEPOSITO\\s+CUENTA\\s+CORRIENTE\\s+#\\s*(\\d+)"
+
+  destination_account:
+    # "Cta. Corriente: 28519346"
+    - "Cta\\.\\s*Corriente[:\\s]+(\\d{6,12})"
+
+  receiver_name:
+    # "Nombre: UNIVERSIDAD PARTICULAR SAN GREGORIO DE P"
+    - "Nombre[:\\s]+([A-Z][A-Z\\s]+?)(?:\\s{2,}|\\n|$)"

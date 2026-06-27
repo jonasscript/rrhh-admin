@@ -1,4 +1,4 @@
-# RRHH Admin + Condominio
+# HABBITA
 
 Sistema de administración de Recursos Humanos con módulo de condominio.
 
@@ -62,4 +62,4 @@ http://localhost:3000/api/v1
 | Anuncios programados | Cada minuto | Envía comunicados en fecha programada |
 | Recordatorio alícuotas | Día 5 de cada mes | Email de cobro a propietarios pendientes |
 | Actualización mora | Cada lunes | Marca pagos vencidos y acumula mora |
-# rrhh-admin
+# HABBITA

@@ -1,0 +1,53 @@
+# Comprobante de transferencia - JEP Móvil
+# Formato verificado: encabezado verde "JEP Móvil" y secciones de cuenta origen/destino.
+
+id: jep_transferencia
+name: JEP Móvil - Transferencia
+bank_name: JEP
+payment_type: transfer
+
+identify:
+  required:
+    # Higher-contrast OCR can merge this as "JEPMóvil".
+    - "JEP"
+    - "COMPROBANTE DE TRANSFERENCIA"
+  optional:
+    - "Valor debitado"
+    - "Cuenta de origen"
+    - "Cuenta destino"
+    - "Transferencia realizada correctamente"
+
+defaults:
+  currency: USD
+
+fields:
+  amount:
+    - "Monto:\\s*\\n\\s*\\$?\\s*([\\d,.]+)"
+
+  date:
+    - "Fecha:\\s*\\n\\s*(\\d{2}/\\d{2}/\\d{4})"
+
+  reference_number:
+    - "No\\.?\\s*([A-Z0-9]{10,30})"
+
+  origin_account:
+    - "Cuenta\\s+de\\s+origen:.{0,180}?N[uú]mero\\s+de\\s+cuenta:\\s*\\n\\s*([0-9OoXx*]{6,20})"
+
+  destination_account:
+    - "Cuenta\\s+destino:.{0,260}?N[uú]mero\\s+de\\s+cuenta:\\s*\\n\\s*([0-9OoXx*]{6,20})"
+
+  sender_name:
+    - "Cuenta\\s+de\\s+origen:\\s*\\n\\s*Nombre:\\s*\\n\\s*([^\\n]{3,80})"
+
+  receiver_name:
+    - "Cuenta\\s+destino:.{0,180}?Nombre:\\s*\\n\\s*([^\\n]{3,80})"
+
+# In this layout, the transferred amount is the debit total minus the fee. It
+# is more reliable than the "Monto" glyph when OCR reads "$1" as "5".
+computed_fields:
+  amount:
+    operation: subtract
+    minuend:
+      - "Valor\\s+debitado:\\s*\\n\\s*\\$?\\s*([\\d,.]+)"
+    subtrahend:
+      - "Costo\\s+de\\s+transacci[oó]n:\\s*\\n\\s*\\$?\\s*([\\d,.]+)"

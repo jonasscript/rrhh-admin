@@ -12,7 +12,7 @@ import { MenuItem } from 'primeng/api';
   template: `
     <header class="navbar">
       <div class="navbar-left">
-        <span class="page-title">Sistema de Administración RRHH</span>
+        <span class="page-title">HABBITA</span>
       </div>
       <div class="navbar-right">
         <span class="user-name">{{ auth.currentUser?.email }}</span>

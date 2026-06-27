@@ -1,0 +1,54 @@
+# Comprobante de depósito en ventanilla - Banco del Pacífico (físico)
+# Formato: ticket impreso azul con logo "ab"
+# Ejemplo: "BANCO DEL PACIFICO"
+#          "Cta.No. 0007431821 RCE CCU CORPORACION ELECTRICA DEL ECUADOR..."
+#          "DEPOSITO CORRIENTE Cod.:      EFECTIVO      572.00"
+#          "DOLAR AMERICANO Pap: 0224925945 12:37:37   CH.ESTE BANCO"
+#          "2022-02-10 MACHALA-EL GUABO                CH.BCOS.LOCAL"
+#          "Caja:00003 APZAMBRA REF:1030820 Normal      TOTAL    572.00"
+
+id: banco_pacifico_deposito
+name: Banco del Pacífico - Depósito Ventanilla
+bank_name: Banco del Pacífico
+payment_type: deposit
+
+defaults:
+  currency: USD
+
+identify:
+  required:
+    - "Banco del Pac"
+    - "DEPOSITO CORRIENTE"
+  optional:
+    - "COMPROBANTE DE TRANSACCION"
+    - "DOLAR AMERICANO"
+    - "BANCO DEL PACIFICO"
+    - "REF:"
+    - "Cta.No."
+
+fields:
+  amount:
+    # "TOTAL    572.00" — al final del ticket
+    - "TOTAL\\s+(\\d[\\d,\\.]+)"
+    # "EFECTIVO      572.00"
+    - "EFECTIVO\\s+(\\d[\\d,\\.]+)"
+
+  currency:
+    # "DOLAR AMERICANO" → no hay código explícito, buscar USD si aparece
+    - "\\b(USD)\\b"
+
+  date:
+    # "2022-02-10"
+    - "(\\d{4}-\\d{2}-\\d{2})"
+
+  reference_number:
+    # "REF:1030820"
+    - "REF[:\\s]*(\\d{5,12})"
+
+  destination_account:
+    # "Cta.No. 0007431821"
+    - "Cta\\.No\\.\\s*(\\d{8,14})"
+
+  receiver_name:
+    # "Cta.No. 0007431821 RCE CCU CORPORACION ELECTRICA..."
+    - "Cta\\.No\\.\\s*\\d+\\s+([A-Z][A-Z\\s]{4,80}?)(?:\\n|\\s{3,}|$)"

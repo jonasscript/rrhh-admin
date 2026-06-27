@@ -1,15 +1,37 @@
 const nodemailer = require('nodemailer');
 const config     = require('../config/config');
 
+const isOAuth2 = config.email.authMethod === 'OAUTH2';
+const outlookTokenUrl = config.email.oauth2.tokenUrl ||
+  `https://login.microsoftonline.com/${config.email.oauth2.tenant}/oauth2/v2.0/token`;
+
 const transporter = nodemailer.createTransport({
   host: config.email.host,
   port: config.email.port,
   secure: config.email.port === 465,
-  auth: {
-    user: config.email.user,
-    pass: config.email.pass,
-  },
+  requireTLS: config.email.port === 587,
+  auth: isOAuth2
+    ? {
+        type: 'OAuth2',
+        user: config.email.user,
+        clientId: config.email.oauth2.clientId,
+        clientSecret: config.email.oauth2.clientSecret,
+        refreshToken: config.email.oauth2.refreshToken,
+        accessUrl: outlookTokenUrl,
+      }
+    : {
+        user: config.email.user,
+        pass: config.email.pass,
+      },
 });
+
+// EMAIL_FROM puede ser una dirección simple (correo@dominio.com) o una
+// dirección RFC completa ("El Alcázar <correo@dominio.com>").
+const fromAddress = (defaultName) => {
+  const configured = String(config.email.from || config.email.user || '').trim();
+  if (/<[^>]+>/.test(configured)) return configured;
+  return configured ? `"${defaultName}" <${configured}>` : undefined;
+};
 
 const MONTHS_ES = [
   '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -29,7 +51,7 @@ const sendAnnouncementEmail = async (ann, recipients) => {
   for (const r of recipients) {
     try {
       await transporter.sendMail({
-        from:    `"RRHH Admin" <${config.email.from}>`,
+        from:    fromAddress('HABBITA'),
         to:      r.email,
         subject: `[${badge}] ${ann.title}`,
         html: `
@@ -62,7 +84,7 @@ const sendAliquotEmail = async (payment) => {
   const monthName = MONTHS_ES[payment.month];
 
   await transporter.sendMail({
-    from:    `"Condominio Admin" <${config.email.from}>`,
+    from:    fromAddress('HABBITA'),
     to:      payment.owner_email,
     subject: `Cobro de Alícuota — ${monthName} ${payment.year}`,
     html: `
@@ -106,7 +128,7 @@ const sendPayrollEmail = async (detail, pdfBuffer) => {
   const monthName = MONTHS_ES[detail.month];
 
   await transporter.sendMail({
-    from:    `"RRHH Admin" <${config.email.from}>`,
+    from:    fromAddress('HABBITA'),
     to:      detail.email,
     subject: `Rol de Pagos — ${monthName} ${detail.year}`,
     html: `

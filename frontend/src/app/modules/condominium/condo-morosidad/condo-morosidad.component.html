@@ -93,14 +93,16 @@
             <h4 class="mora-history-title">Abonos a mora registrados</h4>
             <p-table [value]="selectedOwner.moraPayments || []" stripedRows styleClass="p-datatable-sm">
               <ng-template pTemplate="header">
-                <tr><th>Fecha</th><th>Tipo</th><th>Período de mora</th><th>Valor</th><th>Notas</th><th>Comprobante</th></tr>
+                <tr><th>Fecha</th><th>Tipo</th><th>Mes que generó mora</th><th>Mora total del período</th><th>Abono aplicado</th><th>Saldo actual</th><th>Notas</th><th>Comprobante</th></tr>
               </ng-template>
               <ng-template pTemplate="body" let-payment>
                 <tr>
                   <td>{{ payment.paymentDate | date:'dd/MM/yy' }}</td>
                   <td>{{ payment.paymentType === 'DIRECT' ? 'Pago directo' : 'Excedente de alícuota' }}</td>
                   <td>{{ payment.debtMonth && payment.debtYear ? monthName(payment.debtMonth) + ' ' + payment.debtYear : 'Mora manual' }}</td>
+                  <td>{{ payment.debtTotalAmount !== undefined ? (payment.debtTotalAmount | currency:'USD':'symbol-narrow':'1.2-2') : '—' }}</td>
                   <td>{{ payment.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                  <td>{{ payment.debtCurrentPending !== undefined ? (payment.debtCurrentPending | currency:'USD':'symbol-narrow':'1.2-2') : '—' }}</td>
                   <td>{{ payment.notes || '—' }}</td>
                   <td>
                     @if (payment.proofUrl) {

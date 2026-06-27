@@ -1,0 +1,42 @@
+# Transferencia a otras instituciones - App Banco Guayaquil
+# El logo suele llegar al OCR como "Bançoquil"; se identifica por el cuerpo.
+
+id: banco_guayaquil_transferencia_instituciones
+name: Banco Guayaquil - Transferencia a otras instituciones
+bank_name: Banco Guayaquil
+payment_type: transfer
+
+identify:
+  required:
+    - "TRANSFERENCIA A OTRAS INSTITUCIONES"
+    - "Valor debitado"
+  optional:
+    - "FINANCIERAS"
+    - "Comisión"
+    - "Bançoquil"
+    - "Banco Guayaquil"
+
+defaults:
+  currency: USD
+
+fields:
+  amount:
+    - "(?:^|\\n)\\$\\s*([\\d,.]+)"
+
+  date:
+    - "(\\d{2}/\\d{2}/\\d{4})\\s+\\d{2}[.:]\\d{2}[.:]\\d{2}"
+
+  reference_number:
+    - "No\\.?\\s*(\\d{6,15})"
+
+  origin_account:
+    - "Ahorros\\s*\\n\\s*([0-9OoXx*]{6,20})"
+
+  destination_account:
+    - "Banco\\s+Bolivariano\\s+Corriente\\s*\\n\\s*([0-9OoXx*]{6,20})"
+
+  sender_name:
+    - "inmediata\\s*\\n\\s*([^\\n]{3,80})"
+
+  receiver_name:
+    - "(?:[0-9OoXx*]{6,20})\\s*\\n\\s*([^\\n]{3,80})\\s*\\n\\s*Banco\\s+Bolivariano"

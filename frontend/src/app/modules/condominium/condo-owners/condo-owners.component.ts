@@ -55,7 +55,16 @@ export class CondoOwnersComponent implements OnInit {
   load() {
     this.loading = true;
     this.svc.getOwners().subscribe({
-      next: (res) => { this.owners = res.owners; this.totalPct = res.totalParticipationPct; this.loading = false; },
+      next: (res) => {
+        this.owners = [...res.owners].sort((first, second) =>
+          first.apartmentNumber.localeCompare(second.apartmentNumber, 'es', {
+            numeric: true,
+            sensitivity: 'base',
+          }),
+        );
+        this.totalPct = res.totalParticipationPct;
+        this.loading = false;
+      },
       error: () => this.loading = false,
     });
   }
