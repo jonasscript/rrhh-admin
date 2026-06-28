@@ -524,6 +524,8 @@ class OCRService:
 
     def _extract_amount(self, text: str) -> Optional[str]:
         patterns = [
+            r"(?:valor\s+debitado)[:\s\n]*\$?\s*([\d,\.]+)",
+            r"(?:enviaste)[:\s\n]*\$?\s*([\d,\.]+)",
             r"(?:monto|importe|amount|total|valor|subtotal)[:\s$]*\$?\s*([\d,\.]+)",
             r"\$\s*([\d,\.]{3,})",
             r"([\d,\.]{3,})\s*(?:USD|MXN|COP|PEN|ARS|CLP|BRL|EUR)",

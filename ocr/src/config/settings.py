@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # OCR
     OCR_ENGINE: str = "tesseract"
     OCR_TESSERACT_LANG: str = "spa+eng"
-    OCR_TESSERACT_CONFIG: str = "--oem 1 --psm 6"
+    OCR_TESSERACT_CONFIG: str = "--oem 1 --psm 4"
     OCR_TESSERACT_CMD: str = ""
     OCR_TIMEOUT_SECONDS: int = 8
     OCR_MAX_DIM: int = 1600

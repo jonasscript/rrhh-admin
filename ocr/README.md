@@ -169,7 +169,7 @@ curl -X POST http://localhost:8000/ocr/movements/scan \
 | `OAUTH_CLIENTS` | `backend-client:...` | Pares `client_id:secret` separados por comas |
 | `OCR_ENGINE` | `tesseract` | Motor OCR usado por el servicio |
 | `OCR_TESSERACT_LANG` | `spa+eng` | Idiomas instalados de Tesseract |
-| `OCR_TESSERACT_CONFIG` | `--oem 1 --psm 6` | Opciones enviadas a Tesseract |
+| `OCR_TESSERACT_CONFIG` | `--oem 1 --psm 4` | Opciones enviadas a Tesseract |
 | `OCR_TESSERACT_CMD` | *(vacío)* | Ruta opcional al binario `tesseract` si no está en `PATH` |
 | `OCR_TIMEOUT_SECONDS` | `8` | Timeout máximo por imagen OCR |
 | `OCR_MAX_DIM` | `1600` | Lado máximo de imagen antes de OCR |

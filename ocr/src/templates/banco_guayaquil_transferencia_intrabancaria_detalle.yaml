@@ -1,0 +1,43 @@
+# Detalle de transferencia intrabancaria - Banco Guayaquil
+# Formato verificado: pantalla de detalle con encabezado "Enviaste".
+
+id: banco_guayaquil_transferencia_intrabancaria_detalle
+name: Banco Guayaquil - Transferencia intrabancaria detalle
+bank_name: Banco Guayaquil
+payment_type: transfer
+strict_fields: true
+
+defaults:
+  currency: USD
+
+identify:
+  required:
+    - "Enviaste"
+    - "Transferencia Banco Guayaquil"
+  optional:
+    - "Transf.intrabancarias"
+    - "Banca Virtual Movil"
+    - "Código De Transacción"
+    - "Llega De Forma Inmediata"
+
+fields:
+  amount:
+    - "Enviaste\\s*\\n\\s*\\$?\\s*([\\d,.]+)"
+    - "(?:^|\\n)\\s*\\$\\s*([\\d,.]+)\\s*(?:\\n|$)"
+
+  date:
+    - "Fecha\\s*\\n\\s*(\\d{2}/\\d{2}/\\d{4})"
+    - "\\b(\\d{2}/\\d{2}/\\d{4})\\b"
+
+  reference_number:
+    - "C[oó]digo\\s+De\\s+Transacci[oó]n\\s*\\n\\s*(\\d{8,20})"
+    - "Llega\\s+De\\s+Forma\\s+Inmediata\\s*\\S*\\s*\\n\\s*(\\d{8,20})"
+    - "\\b(\\d{12,20})\\b"
+
+  origin_account:
+    - "Desde\\s+La\\s+Cuenta\\s*\\n\\s*([0-9OoXx*]{6,20})"
+    - "([0-9OoXx*]{10,20})\\s*\\n\\s*(?:Fecha|[a-z]{3,})"
+
+  receiver_name:
+    - "Para\\s*\\n\\s*([^\\n]{3,80})"
+    - "\\$?\\s*[\\d,.]+\\s*\\n\\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ ]{6,80})"
