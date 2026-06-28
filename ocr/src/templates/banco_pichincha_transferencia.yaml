@@ -44,7 +44,8 @@ fields:
     # "Fecha   18/04/2025"
     - "Fecha\\s+(\\d{1,2}/\\d{1,2}/\\d{4})"
     # Mobile receipt: "El 03 de junio de 2026"; OCR can merge "El03".
-    - "(E[l1]\\s*\\d{1,2}\\s*de\\s*(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+de\\s+\\d{4})"
+    - "E[l1]\\s*(\\d{1,2}\\s*de\\s*(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+de\\s+\\d{4})"
+    - "(\\d{1,2}\\s*de\\s*(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+de\\s+\\d{4})"
 
   reference_number:
     # "Comprobante: 746892132"

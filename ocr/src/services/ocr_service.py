@@ -89,6 +89,33 @@ class OCRService:
             if self._ocr_score(enhanced_result) > self._ocr_score(current_result):
                 full_text, avg_confidence, sorted_blocks, img_dims, word_count = enhanced_result
 
+        # Mobile receipts often render secondary labels like Fecha in light
+        # grey. A contrast pass recovers those labels without replacing the
+        # primary OCR result used by amount/account templates.
+        if block_level == "line" and self._may_need_date_retry(full_text):
+            enhanced = ImageEnhance.Contrast(image.convert("L")).enhance(2.0)
+            retry_text, retry_confidence, retry_blocks, _retry_dims, retry_word_count = self._run_tesseract(
+                enhanced,
+                block_level=block_level,
+            )
+            if self._contains_date_candidate(retry_text):
+                full_text = self._merge_ocr_lines(full_text, retry_text)
+                sorted_blocks = self._merge_blocks(sorted_blocks, retry_blocks)
+                word_count = max(word_count, retry_word_count)
+                avg_confidence = max(avg_confidence, retry_confidence)
+
+        if block_level == "line" and self._is_guayaquil_institutions(full_text) and self._may_need_date_retry(full_text):
+            card = self._crop_guayaquil_institutions_card(image)
+            retry_text, retry_confidence, retry_blocks, _retry_dims, retry_word_count = self._run_tesseract(
+                card,
+                block_level=block_level,
+            )
+            if self._contains_date_candidate(retry_text):
+                full_text = self._merge_ocr_lines(full_text, retry_text)
+                sorted_blocks = self._merge_blocks(sorted_blocks, retry_blocks)
+                word_count = max(word_count, retry_word_count)
+                avg_confidence = max(avg_confidence, retry_confidence)
+
         # Phone photos of a thermal receipt are occasionally submitted sideways.
         # Tesseract does not auto-rotate them, and the result is usually a stream
         # of isolated digits.  Only retry clearly unreliable reads to avoid a
@@ -105,6 +132,71 @@ class OCRService:
             full_text, avg_confidence, sorted_blocks, img_dims, word_count = best_result
 
         return full_text, round(avg_confidence, 4), sorted_blocks, img_dims
+
+    @staticmethod
+    def _may_need_date_retry(text: str) -> bool:
+        if re.search(r"\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b", text):
+            return False
+        if re.search(r"\b\d{4}/[A-ZÁÉÍÓÚÑ]{3}/\d{2}\b", text, re.IGNORECASE):
+            return False
+        return True
+
+    @staticmethod
+    def _contains_date_candidate(text: str) -> bool:
+        patterns = (
+            r"\bfecha\b",
+            r"\b\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4}\b",
+            r"\b\d{4}/[A-ZÁÉÍÓÚÑ]{3}/\d{2}\b",
+            r"\b\d{1,2}\s+de\s+[a-záéíóúñ]+\s+de\s+\d{4}\b",
+        )
+        return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+    @staticmethod
+    def _merge_ocr_lines(primary: str, secondary: str) -> str:
+        lines: list[str] = []
+        seen: set[str] = set()
+        for line in (primary or "").splitlines() + (secondary or "").splitlines():
+            cleaned = line.strip()
+            if not cleaned:
+                continue
+            key = re.sub(r"\s+", " ", cleaned).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            lines.append(cleaned)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _merge_blocks(primary: list, secondary: list) -> list:
+        merged: list = []
+        seen: set[tuple] = set()
+        for block in primary + secondary:
+            key = (
+                re.sub(r"\s+", " ", str(block.get("text", "")).strip()).lower(),
+                round(float(block.get("cx", 0)) / 8),
+                round(float(block.get("cy", 0)) / 8),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(block)
+        merged.sort(key=lambda block: (block["cy"], block["cx"]))
+        return merged
+
+    @staticmethod
+    def _is_guayaquil_institutions(text: str) -> bool:
+        upper = (text or "").upper()
+        return "TRANSFERENCIA A OTRAS INSTITUCIONES" in upper and "FINANCIERAS" in upper
+
+    @staticmethod
+    def _crop_guayaquil_institutions_card(image: Image.Image) -> Image.Image:
+        width, height = image.size
+        return image.crop((
+            int(width * 0.03),
+            int(height * 0.14),
+            int(width * 0.97),
+            int(height * 0.41),
+        ))
 
     def _run_tesseract(self, image: Image.Image, *, block_level: str) -> Tuple[str, float, list, tuple, int]:
         pytesseract = self._configure_tesseract()
@@ -499,7 +591,7 @@ class OCRService:
             payment_type=payment_type,
             amount=_get("amount", self._extract_amount),
             currency=_get("currency", self._extract_currency),
-            date=_get("date", self._extract_date),
+            date=self._clean_date(_get("date", self._extract_date)),
             reference_number=_get("reference_number", self._extract_reference),
             origin_account=_get("origin_account", self._extract_origin_account),
             destination_account=_get("destination_account", self._extract_destination_account),
@@ -548,14 +640,25 @@ class OCRService:
         patterns = [
             r"\b(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\b",
             r"\b(\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2})\b",
+            r"\b(\d{4}/[A-ZÁÉÍÓÚÑ]{3}/\d{2})\b",
+            r"\b(?:E[l1]\s*)?(\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto"
+            r"|septiembre|octubre|noviembre|diciembre)\s+de\s+\d{4})\b",
             r"\b(\d{1,2}\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto"
             r"|septiembre|octubre|noviembre|diciembre)\s+\d{2,4})\b",
         ]
         for pattern in patterns:
             m = re.search(pattern, text, re.IGNORECASE)
             if m:
-                return m.group(1).strip()
+                return self._clean_date(m.group(1).strip())
         return None
+
+    @staticmethod
+    def _clean_date(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        cleaned = re.sub(r"\s+", " ", value).strip()
+        cleaned = re.sub(r"^(?:E[l1]\s*)?(?=\d{1,2}\s+de\s+)", "", cleaned, flags=re.IGNORECASE)
+        return cleaned or None
 
     def _extract_reference(self, text: str) -> Optional[str]:
         patterns = [
