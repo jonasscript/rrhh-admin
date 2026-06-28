@@ -33,7 +33,7 @@ defaults:
   currency: USD
 
 identify:
-  # Use reliably-OCR'd body text — NOT the stylised logo which EasyOCR garbles.
+  # Use reliably-OCR'd body text — NOT the stylised logo, which OCR can garble.
   required:
     - "Monto pagado"
     - "pago ha sido realizado"

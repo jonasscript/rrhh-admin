@@ -3,9 +3,7 @@ from typing import List
 
 from PIL import Image
 
-
-# Maximum largest dimension before downscaling — keeps EasyOCR fast.
-_MAX_DIM = 2000
+from src.config.settings import settings
 
 
 def preprocess_image(image_bytes: bytes) -> bytes:
@@ -17,8 +15,8 @@ def preprocess_image(image_bytes: bytes) -> bytes:
     """
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    if max(image.size) > _MAX_DIM:
-        ratio = _MAX_DIM / max(image.size)
+    if max(image.size) > settings.OCR_MAX_DIM:
+        ratio = settings.OCR_MAX_DIM / max(image.size)
         new_size = (int(image.width * ratio), int(image.height * ratio))
         image = image.resize(new_size, Image.LANCZOS)
 
@@ -46,7 +44,7 @@ def pdf_to_images(pdf_bytes: bytes) -> List[bytes]:
 
         document = fitz.open(stream=pdf_bytes, filetype="pdf")
         try:
-            # 2x the native resolution gives EasyOCR enough detail for the
+            # 2x the native resolution gives OCR enough detail for the
             # small table cells in the movement-statement template.
             matrix = fitz.Matrix(2, 2)
             return [

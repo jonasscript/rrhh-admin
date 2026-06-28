@@ -18,7 +18,7 @@ _ALLOWED_MIME_TYPES = {"image/jpeg", "image/jpg", "image/png", "application/pdf"
     summary="Scan a payment receipt",
     description=(
         "Upload a payment-receipt image (JPG / PNG) or PDF. "
-        "The service extracts text with EasyOCR and returns structured "
+        "The service extracts text with Tesseract OCR and returns structured "
         "payment information (amount, date, reference, bank, etc.)."
     ),
 )

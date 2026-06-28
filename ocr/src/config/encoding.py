@@ -12,8 +12,8 @@ def configure_utf8_stdio() -> None:
     Keep third-party progress/log output from crashing under ASCII-only hosts.
 
     Some WSGI/Passenger environments expose stdout/stderr with ASCII encoding.
-    EasyOCR can emit Unicode progress bars while loading/downloading models, so
-    make standard streams UTF-8 capable before the OCR reader is initialized.
+    Third-party OCR tools can emit Unicode progress/log output, so make
+    standard streams UTF-8 capable before OCR work starts.
     """
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     os.environ.setdefault("LANG", "C.UTF-8")

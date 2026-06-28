@@ -12,7 +12,7 @@ app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description=(
-        "REST API that uses EasyOCR to read payment receipts "
+        "REST API that uses Tesseract OCR to read payment receipts "
         "(bank transfers and deposits) and returns structured data. "
         "Authentication is handled via **OAuth 2 — Client Credentials** flow."
     ),

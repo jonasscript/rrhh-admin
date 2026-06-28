@@ -16,5 +16,5 @@ async def health_check() -> HealthResponse:
     return HealthResponse(
         status="ok",
         version=settings.APP_VERSION,
-        ocr_ready=ocr_service.is_loaded(),
+        ocr_ready=ocr_service.is_ready(),
     )

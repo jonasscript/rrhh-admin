@@ -1,5 +1,4 @@
 import secrets
-from typing import List
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -24,8 +23,12 @@ class Settings(BaseSettings):
     OAUTH_CLIENTS: str = "backend-client:super-secret-change-in-production"
 
     # OCR
-    OCR_LANGUAGES: str = "es,en"  # comma-separated language codes
-    OCR_GPU: bool = False
+    OCR_ENGINE: str = "tesseract"
+    OCR_TESSERACT_LANG: str = "spa+eng"
+    OCR_TESSERACT_CONFIG: str = "--oem 1 --psm 6"
+    OCR_TESSERACT_CMD: str = ""
+    OCR_TIMEOUT_SECONDS: int = 8
+    OCR_MAX_DIM: int = 1600
 
     # Upload limits
     MAX_FILE_SIZE_MB: int = 10
@@ -40,14 +43,15 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
     @property
     def max_file_size_bytes(self) -> int:
         return self.MAX_FILE_SIZE_MB * 1024 * 1024
 
     @property
-    def ocr_language_list(self) -> List[str]:
-        return [lang.strip() for lang in self.OCR_LANGUAGES.split(",") if lang.strip()]
+    def ocr_tesseract_language_list(self) -> list[str]:
+        return [lang.strip() for lang in self.OCR_TESSERACT_LANG.split("+") if lang.strip()]
 
 
 settings = Settings()

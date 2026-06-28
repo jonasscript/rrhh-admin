@@ -1,13 +1,13 @@
 # Servicio OCR de Comprobantes de Pago
 
-Servicio REST API que lee comprobantes de pago (transferencias bancarias y depósitos) utilizando EasyOCR y devuelve datos estructurados. La autenticación usa el flujo **OAuth 2 – Client Credentials**.
+Servicio REST API que lee comprobantes de pago (transferencias bancarias y depósitos) utilizando Tesseract OCR local y devuelve datos estructurados. La autenticación usa el flujo **OAuth 2 – Client Credentials**.
 
 ---
 
 ## Características
 
 - Carga de imágenes de comprobantes (JPG, PNG) o PDFs
-- Extracción de texto con EasyOCR (español e inglés por defecto)
+- Extracción de texto con Tesseract OCR (español e inglés por defecto)
 - Lectura de estados de movimientos bancarios en PDF, sin depender de Poppler
 - Extrae: monto, moneda, fecha, referencia, banco, cuentas origen/destino, remitente/destinatario
 - Autenticación OAuth 2 Client Credentials (tokens JWT Bearer)
@@ -25,14 +25,66 @@ cp .env.example .env
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Instalar dependencias
+# 3. Instalar dependencias del sistema (Debian/Ubuntu)
+sudo apt install tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng
+
+# 4. Instalar dependencias Python
 pip install -r requirements.txt
 
-# 4. Iniciar el servidor
+# 5. Iniciar el servidor
 uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Abre <http://localhost:8000/docs> para la documentación interactiva de la API.
+
+---
+
+## Despliegue en PythonAnywhere
+
+En la pestaña **Web** de PythonAnywhere usa:
+
+| Campo | Valor |
+|---|---|
+| Source code | `/home/jonascript/ocr` |
+| Working directory | `/home/jonascript/ocr` |
+| Virtualenv | `/home/jonascript/ocr/.venv` |
+
+Instala dependencias desde una consola Bash:
+
+```bash
+cd /home/jonascript/ocr
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Luego abre `/var/www/jonascript_pythonanywhere_com_wsgi.py` y pega el contenido de
+`pythonanywhere_wsgi.py`. Después presiona **Reload** en la pestaña **Web**.
+
+Verifica:
+
+```bash
+curl https://jonascript.pythonanywhere.com/health
+```
+
+Para OCR con Tesseract, confirma si PythonAnywhere tiene el binario disponible:
+
+```bash
+which tesseract
+tesseract --version
+tesseract --list-langs
+```
+
+Si `which tesseract` devuelve una ruta, colócala en `.env`:
+
+```env
+OCR_TESSERACT_CMD=/ruta/devuelta/por/which/tesseract
+OCR_TESSERACT_LANG=spa+eng
+```
+
+Si `which tesseract` no devuelve nada, el sitio puede arrancar pero el OCR de
+imágenes no funcionará hasta usar un entorno que incluya el binario de Tesseract
+o un servicio OCR externo.
 
 ---
 
@@ -115,8 +167,12 @@ curl -X POST http://localhost:8000/ocr/movements/scan \
 | `ALGORITHM` | `HS256` | Algoritmo JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Duración del token |
 | `OAUTH_CLIENTS` | `backend-client:...` | Pares `client_id:secret` separados por comas |
-| `OCR_LANGUAGES` | `es,en` | Códigos de idioma para EasyOCR |
-| `OCR_GPU` | `false` | Activar aceleración por GPU |
+| `OCR_ENGINE` | `tesseract` | Motor OCR usado por el servicio |
+| `OCR_TESSERACT_LANG` | `spa+eng` | Idiomas instalados de Tesseract |
+| `OCR_TESSERACT_CONFIG` | `--oem 1 --psm 6` | Opciones enviadas a Tesseract |
+| `OCR_TESSERACT_CMD` | *(vacío)* | Ruta opcional al binario `tesseract` si no está en `PATH` |
+| `OCR_TIMEOUT_SECONDS` | `8` | Timeout máximo por imagen OCR |
+| `OCR_MAX_DIM` | `1600` | Lado máximo de imagen antes de OCR |
 | `MAX_FILE_SIZE_MB` | `10` | Límite de tamaño de archivo para carga |
 
 ---

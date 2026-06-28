@@ -14,12 +14,8 @@ python-multipart==0.0.20
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 
-# SSL certificates (needed on macOS / Python 3.13)
-certifi>=2024.1.1
-
 # Image handling
 Pillow==10.4.0
-numpy==1.26.4
 
 # PDF support (PyMuPDF does not require a system Poppler installation)
 PyMuPDF>=1.24,<2
@@ -30,5 +26,5 @@ pdf2image==1.17.0
 # YAML template parsing
 PyYAML>=6.0
 
-# EasyOCR
-easyocr==1.7.2
+# Tesseract OCR wrapper (requires the tesseract binary installed in the OS)
+pytesseract==0.3.13

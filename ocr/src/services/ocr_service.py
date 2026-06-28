@@ -1,23 +1,9 @@
 import io
 import re
-import ssl
-import urllib.request
+import shutil
 from typing import Optional, Tuple
 
-import certifi
-import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
-
-# macOS Python installers ship without system CA certs wired in.
-# Patch the default SSL context so EasyOCR can download its models.
-ssl._create_default_https_context = ssl.create_default_context  # noqa: SLF001
-urllib.request.install_opener(
-    urllib.request.build_opener(
-        urllib.request.HTTPSHandler(
-            context=ssl.create_default_context(cafile=certifi.where())
-        )
-    )
-)
 
 from src.config.settings import settings
 from src.models.schemas import ExtractedPaymentData, PaymentType
@@ -26,12 +12,11 @@ from src.services.template_registry import template_registry
 
 class OCRService:
     """
-    Singleton wrapper around EasyOCR that processes payment-receipt images
+    Singleton wrapper around Tesseract that processes payment-receipt images
     and extracts structured payment information.
     """
 
     _instance: Optional["OCRService"] = None
-    _reader = None  # easyocr.Reader — loaded lazily to avoid heavy startup
 
     # ------------------------------------------------------------------
     # Singleton access
@@ -44,108 +29,186 @@ class OCRService:
         return cls._instance
 
     # ------------------------------------------------------------------
-    # EasyOCR reader
+    # Tesseract readiness
     # ------------------------------------------------------------------
 
-    def _get_reader(self):
-        if self._reader is None:
-            import easyocr  # imported lazily so the module loads fast
+    def _configure_tesseract(self):
+        import pytesseract
 
-            self._reader = easyocr.Reader(
-                settings.ocr_language_list,
-                gpu=settings.OCR_GPU,
-                verbose=False,
-            )
-        return self._reader
+        if settings.OCR_TESSERACT_CMD:
+            pytesseract.pytesseract.tesseract_cmd = settings.OCR_TESSERACT_CMD
+        return pytesseract
 
     def is_ready(self) -> bool:
         try:
-            self._get_reader()
-            return True
+            pytesseract = self._configure_tesseract()
+            cmd = settings.OCR_TESSERACT_CMD or "tesseract"
+            if not settings.OCR_TESSERACT_CMD and shutil.which(cmd) is None:
+                return False
+            pytesseract.get_tesseract_version()
+            available_langs = set(pytesseract.get_languages(config=""))
+            required_langs = set(settings.ocr_tesseract_language_list)
+            return required_langs.issubset(available_langs)
         except Exception:
             return False
 
     def is_loaded(self) -> bool:
-        return self._reader is not None
+        return self.is_ready()
 
     # ------------------------------------------------------------------
     # Core processing
     # ------------------------------------------------------------------
 
-    def process_image(self, image_bytes: bytes, *, allow_rotation: bool = True) -> Tuple[str, float, list, tuple]:
+    def process_image(
+        self,
+        image_bytes: bytes,
+        *,
+        allow_rotation: bool = True,
+        block_level: str = "line",
+    ) -> Tuple[str, float, list, tuple]:
         """
-        Run EasyOCR on the given image bytes.
+        Run Tesseract OCR on the given image bytes.
 
         Returns
         -------
-        (full_text, avg_confidence)
+        (full_text, avg_confidence, sorted_blocks, img_dims)
         """
-        reader = self._get_reader()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img_array = np.array(image)
+        full_text, avg_confidence, sorted_blocks, img_dims, word_count = self._run_tesseract(
+            image,
+            block_level=block_level,
+        )
 
-        results = reader.readtext(img_array, detail=1)
-
-        # JEP's light grey amount rows can make EasyOCR read "$0.41" as
-        # "50.41".  This targeted second pass preserves the original handling
-        # of photographs and only enhances the known app layout.
-        initial_text = "\n".join(text for (_, text, _) in results)
-        if "JEP" in initial_text.upper() and "COMPROBANTE DE TRANSFERENCIA" in initial_text.upper():
-            enhanced = np.array(ImageEnhance.Contrast(Image.fromarray(img_array)).enhance(2.0))
-            enhanced_results = reader.readtext(enhanced, detail=1)
-            if enhanced_results:
-                results = enhanced_results
-                img_array = enhanced
+        # JEP's light grey amount rows can make OCR read "$0.41" as "50.41".
+        # Keep the targeted second pass from the previous OCR implementation for
+        # this known app layout.
+        if "JEP" in full_text.upper() and "COMPROBANTE DE TRANSFERENCIA" in full_text.upper():
+            enhanced = ImageEnhance.Contrast(image).enhance(2.0)
+            enhanced_result = self._run_tesseract(enhanced, block_level=block_level)
+            current_result = (full_text, avg_confidence, sorted_blocks, img_dims, word_count)
+            if self._ocr_score(enhanced_result) > self._ocr_score(current_result):
+                full_text, avg_confidence, sorted_blocks, img_dims, word_count = enhanced_result
 
         # Phone photos of a thermal receipt are occasionally submitted sideways.
-        # EasyOCR does not auto-rotate them, and the result is usually a stream
+        # Tesseract does not auto-rotate them, and the result is usually a stream
         # of isolated digits.  Only retry clearly unreliable reads to avoid a
         # needless performance cost for normal uploads.
-        if allow_rotation and results:
-            initial_confidence = sum(conf for (_, _, conf) in results) / len(results)
-            if initial_confidence < 0.60:
-                best_results = results
-                best_confidence = initial_confidence
-                best_image = img_array
-                for angle in (90, 270):
-                    rotated = np.rot90(img_array, k=angle // 90)
-                    candidate = reader.readtext(rotated, detail=1)
-                    if not candidate:
-                        continue
-                    candidate_confidence = sum(conf for (_, _, conf) in candidate) / len(candidate)
-                    # A material gain is required so a noisy alternative does
-                    # not replace an already legible image.
-                    if candidate_confidence > best_confidence + 0.08:
-                        best_results = candidate
-                        best_confidence = candidate_confidence
-                        best_image = rotated
-                results = best_results
-                img_array = best_image
-
-        if not results:
-            return "", 0.0, [], (0, 0)
-
-        texts = [text for (_, text, _) in results]
-        confidences = [conf for (_, _, conf) in results]
-
-        full_text = "\n".join(texts)
-        avg_confidence = sum(confidences) / len(confidences)
-
-        img_height, img_width = img_array.shape[:2]
-        img_dims = (img_width, img_height)
-
-        # Build sorted blocks: each block has center coords + text + confidence
-        sorted_blocks = []
-        for bbox, text, conf in results:
-            xs = [pt[0] for pt in bbox]
-            ys = [pt[1] for pt in bbox]
-            cx = (min(xs) + max(xs)) / 2.0
-            cy = (min(ys) + max(ys)) / 2.0
-            sorted_blocks.append({"text": text, "cx": cx, "cy": cy, "conf": conf})
-        # Sort top-to-bottom, left-to-right
-        sorted_blocks.sort(key=lambda b: (b["cy"], b["cx"]))
+        if allow_rotation and (word_count < 4 or avg_confidence < 0.45):
+            best_result = (full_text, avg_confidence, sorted_blocks, img_dims, word_count)
+            for angle in (90, 270):
+                candidate = self._run_tesseract(
+                    image.rotate(angle, expand=True),
+                    block_level=block_level,
+                )
+                if self._ocr_score(candidate) > self._ocr_score(best_result):
+                    best_result = candidate
+            full_text, avg_confidence, sorted_blocks, img_dims, word_count = best_result
 
         return full_text, round(avg_confidence, 4), sorted_blocks, img_dims
+
+    def _run_tesseract(self, image: Image.Image, *, block_level: str) -> Tuple[str, float, list, tuple, int]:
+        pytesseract = self._configure_tesseract()
+        if block_level not in {"line", "word"}:
+            raise ValueError("block_level must be 'line' or 'word'.")
+
+        try:
+            data = pytesseract.image_to_data(
+                image,
+                lang=settings.OCR_TESSERACT_LANG,
+                config=settings.OCR_TESSERACT_CONFIG,
+                output_type=pytesseract.Output.DICT,
+                timeout=settings.OCR_TIMEOUT_SECONDS,
+            )
+        except RuntimeError as exc:
+            message = str(exc)
+            if "timeout" in message.lower():
+                raise TimeoutError(
+                    f"Tesseract OCR exceeded {settings.OCR_TIMEOUT_SECONDS} seconds."
+                ) from exc
+            raise RuntimeError(f"Tesseract OCR failed: {message}") from exc
+
+        words = self._extract_tesseract_words(data)
+        line_blocks = self._group_words_by_line(words)
+        full_text = "\n".join(block["text"] for block in line_blocks)
+        confidences = [word["conf"] for word in words if word["conf"] >= 0]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        blocks = line_blocks if block_level == "line" else words
+        blocks.sort(key=lambda block: (block["cy"], block["cx"]))
+        return full_text, avg_confidence, blocks, image.size, len(words)
+
+    @staticmethod
+    def _extract_tesseract_words(data: dict) -> list[dict]:
+        words: list[dict] = []
+        total = len(data.get("text", []))
+        for idx in range(total):
+            text = str(data["text"][idx] or "").strip()
+            if not text:
+                continue
+            conf = OCRService._parse_confidence(data.get("conf", ["-1"])[idx])
+            left = OCRService._parse_int(data.get("left", [0])[idx])
+            top = OCRService._parse_int(data.get("top", [0])[idx])
+            width = OCRService._parse_int(data.get("width", [0])[idx])
+            height = OCRService._parse_int(data.get("height", [0])[idx])
+            words.append({
+                "text": text,
+                "cx": left + width / 2.0,
+                "cy": top + height / 2.0,
+                "conf": conf,
+                "left": left,
+                "top": top,
+                "right": left + width,
+                "bottom": top + height,
+                "line_key": (
+                    data.get("page_num", [0])[idx],
+                    data.get("block_num", [0])[idx],
+                    data.get("par_num", [0])[idx],
+                    data.get("line_num", [0])[idx],
+                ),
+            })
+        return words
+
+    @staticmethod
+    def _group_words_by_line(words: list[dict]) -> list[dict]:
+        grouped: dict[tuple, list[dict]] = {}
+        for word in words:
+            grouped.setdefault(word["line_key"], []).append(word)
+
+        lines: list[dict] = []
+        for line_words in grouped.values():
+            line_words.sort(key=lambda word: word["left"])
+            left = min(word["left"] for word in line_words)
+            top = min(word["top"] for word in line_words)
+            right = max(word["right"] for word in line_words)
+            bottom = max(word["bottom"] for word in line_words)
+            confidences = [word["conf"] for word in line_words if word["conf"] >= 0]
+            lines.append({
+                "text": " ".join(word["text"] for word in line_words),
+                "cx": (left + right) / 2.0,
+                "cy": (top + bottom) / 2.0,
+                "conf": sum(confidences) / len(confidences) if confidences else 0.0,
+            })
+        lines.sort(key=lambda block: (block["cy"], block["cx"]))
+        return lines
+
+    @staticmethod
+    def _parse_confidence(value) -> float:
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            return -1.0
+        return confidence / 100.0 if confidence >= 0 else -1.0
+
+    @staticmethod
+    def _parse_int(value) -> int:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _ocr_score(result: Tuple[str, float, list, tuple, int]) -> float:
+        _text, confidence, _blocks, _dims, word_count = result
+        return word_count + confidence
 
     # ------------------------------------------------------------------
     # Account-movement PDF processing
@@ -175,7 +238,7 @@ class OCRService:
             # legal footer text and materially reduces processing time.
             image_bytes = self._prepare_movement_table_image(page)
             raw_text, _confidence, blocks, dimensions = self.process_image(
-                image_bytes, allow_rotation=False
+                image_bytes, allow_rotation=False, block_level="word"
             )
             page_records = self._extract_movement_rows_from_blocks(blocks, dimensions)
             if not page_records:
@@ -184,7 +247,7 @@ class OCRService:
                 # cells readable when the normal OCR pass misses them.
                 enhanced_image = self._enhance_movement_image(image_bytes)
                 raw_text, _confidence, blocks, dimensions = self.process_image(
-                    enhanced_image, allow_rotation=False
+                    enhanced_image, allow_rotation=False, block_level="word"
                 )
                 page_records = self._extract_movement_rows_from_blocks(blocks, dimensions)
             if not page_records:
@@ -294,7 +357,7 @@ class OCRService:
         if not blocks or not width or not height:
             return []
 
-        # EasyOCR can split a date into multiple blocks. Grouping by visual
+        # Tesseract can split a date into multiple blocks. Grouping by visual
         # row first lets us rebuild FECHA before looking for its columns.
         grouped_rows: list[list[dict]] = []
         row_tolerance = max(16, height * 0.014)
