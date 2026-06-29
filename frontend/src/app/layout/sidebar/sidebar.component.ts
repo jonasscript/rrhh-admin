@@ -17,7 +17,7 @@ interface NavItem {
   template: `
     <nav class="sidebar">
       <div class="sidebar-header">
-        <span class="sidebar-logo">HABBITA</span>
+        <img class="brand-logo" src="assets/logo-dark.png" width="120" alt="HABBITA" />
       </div>
       <ul class="sidebar-menu">
         @for (item of visibleItems; track item.route) {
@@ -89,15 +89,15 @@ export class SidebarComponent implements OnInit {
   private expanded = new Set<string>();
 
   private readonly ALL_ITEMS: (NavItem & { exact?: boolean })[] = [
-    { label: 'Dashboard', icon: 'pi-home', route: '/dashboard' },
-    { label: 'Empleados', icon: 'pi-users', route: '/employees' },
+    // { label: 'Dashboard', icon: 'pi-home', route: '/dashboard' },
+    // { label: 'Empleados', icon: 'pi-users', route: '/employees' },
     { label: '', icon: '', route: '', separator: true },
-    { label: 'Nómina',                icon: 'pi-money-bill', route: '/payroll',           roles: ['ADMIN', 'HR'] },
-    { label: 'Obligaciones Laborales', icon: 'pi-briefcase',  route: '/labor-obligations', roles: ['ADMIN', 'HR'] },
-    { label: 'Vacaciones',            icon: 'pi-sun',        route: '/vacations' },
+    // { label: 'Nómina',                icon: 'pi-money-bill', route: '/payroll',           roles: ['ADMIN', 'HR'] },
+    // { label: 'Obligaciones Laborales', icon: 'pi-briefcase',  route: '/labor-obligations', roles: ['ADMIN', 'HR'] },
+    // { label: 'Vacaciones',            icon: 'pi-sun',        route: '/vacations' },
     { label: 'Turnos de guardias',    icon: 'pi-calendar',   route: '/shifts' },
     { label: '', icon: '', route: '', separator: true },
-    { label: 'Comunicados', icon: 'pi-megaphone', route: '/announcements', roles: ['ADMIN', 'HR'] },
+    // { label: 'Comunicados', icon: 'pi-megaphone', route: '/announcements', roles: ['ADMIN', 'HR'] },
     { label: '', icon: '', route: '', separator: true },
     {
       label: 'Condominio', icon: 'pi-building', route: '/condominium', roles: ['ADMIN', 'HR'],
@@ -105,11 +105,11 @@ export class SidebarComponent implements OnInit {
         { label: 'Inicio',          icon: 'pi-home',              route: '/condominium',             exact: true },
         { label: 'Propietarios',    icon: 'pi-users',             route: '/condominium/owners' },
         { label: 'Períodos',        icon: 'pi-calendar',          route: '/condominium/periods' },
-        { label: 'Fondos Reserva',  icon: 'pi-wallet',            route: '/condominium/funds' },
+        // { label: 'Fondos Reserva',  icon: 'pi-wallet',            route: '/condominium/funds' },
         { label: 'Provisiones',     icon: 'pi-shield',            route: '/condominium/provisions' },
         { label: 'Morosidad',       icon: 'pi-exclamation-circle',route: '/condominium/morosidad' },
         { label: 'Reportes',        icon: 'pi-chart-bar',         route: '/condominium/reports' },
-        { label: 'Configuración',   icon: 'pi-cog',               route: '/condominium/config' },
+        // { label: 'Configuración',   icon: 'pi-cog',               route: '/condominium/config' },
       ],
     },
   ];

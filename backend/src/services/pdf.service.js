@@ -149,12 +149,45 @@ const totalRow = (doc, label, value) => {
   doc.font('Helvetica');
 };
 
+const balanceRow = (doc, label, value, opts = {}) => {
+  const {
+    bold = false,
+    color = '#1e293b',
+    labelColor = '#1e293b',
+    indent = 0,
+    note = '',
+  } = opts;
+  const y = doc.y;
+  const left = 52 + indent;
+  const labelText = note ? `${label} (${note})` : label;
+  doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 10 : 9).fillColor(labelColor);
+  doc.text(labelText, left, y, { width: 350 });
+  const labelEndY = doc.y;
+  doc.y = y;
+  doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(bold ? 10 : 9).fillColor(color);
+  doc.text(value, 440, y, { width: 105, align: 'right' });
+  doc.y = Math.max(labelEndY, y + 12) + 4;
+};
+
+const balanceHeading = (doc, title, fill = '#eff6ff') => {
+  const y = doc.y;
+  doc.rect(40, y, 515, 22).fill(fill);
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#1e3a5f')
+    .text(title, 52, y + 6, { width: 491 });
+  doc.y = y + 30;
+};
+
+const balanceDivider = (doc, color = '#cbd5e1') => {
+  doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke(color);
+  doc.moveDown(0.45);
+};
+
 /**
  * Genera un PDF del Libro de Ingresos y Egresos (Balance General).
- * @param {object} opts — { condoName, periods, funds, year, month_from, month_to }
+ * @param {object} opts — { condoName, periods, totalMora, year, month_from, month_to }
  * @returns {Promise<Buffer>}
  */
-const generateBalancePdf = ({ condoName, periods, funds, year, month_from, month_to }) =>
+const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_from, month_to }) =>
   new Promise((resolve, reject) => {
     const doc    = new PDFDocument({ margin: 40, size: 'A4' });
     const chunks = [];
@@ -163,61 +196,139 @@ const generateBalancePdf = ({ condoName, periods, funds, year, month_from, month
     doc.on('end',   ()  => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    const ensureSpace = (height = 70) => {
+      if (doc.y + height > 740) doc.addPage();
+    };
+
     const periodLabel = year
       ? (month_from && month_to
           ? `${MONTHS_ES[+month_from]}–${MONTHS_ES[+month_to]} ${year}`
           : `Año ${year}`)
       : 'Todos los períodos';
 
+    const totals = periods.reduce((acc, p) => {
+      const totalBilled = parseFloat(p.total_billed) || 0;
+      const totalCollected = parseFloat(p.total_collected) || 0;
+      const totalExpenses = parseFloat(p.total_expenses) || 0;
+      const totalProvisions = parseFloat(p.total_provisions) || 0;
+      return {
+        billed: acc.billed + totalBilled,
+        collected: acc.collected + totalCollected,
+        expenses: acc.expenses + totalExpenses,
+        provisions: acc.provisions + totalProvisions,
+        result: acc.result + (totalCollected - totalExpenses),
+      };
+    }, { billed: 0, collected: 0, expenses: 0, provisions: 0, result: 0 });
+    totals.pending = Math.max(0, totals.billed - totals.collected);
+    totals.accrualResult = totals.billed - totals.expenses;
+
     // Encabezado
-    doc.fontSize(16).fillColor('#1e40af').text('LIBRO DE INGRESOS Y EGRESOS', { align: 'center' });
+    doc.fontSize(16).fillColor('#1e40af').text('INFORME FINANCIERO DEL CONDOMINIO', { align: 'center' });
     doc.fontSize(11).fillColor('#334155').text(condoName, { align: 'center' });
     doc.fontSize(10).fillColor('#64748b').text(periodLabel, { align: 'center' });
     doc.moveDown();
-    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#94a3b8');
+    balanceDivider(doc, '#94a3b8');
+
+    balanceHeading(doc, 'BALANCE GENERAL DEL PERIODO');
+    balanceRow(doc, 'Ingresos facturados', fmt(totals.billed));
+    balanceRow(doc, 'Ingresos cobrados', fmt(totals.collected), { color: '#16a34a' });
+    balanceRow(doc, 'Pendiente del periodo consultado', fmt(totals.pending), { color: '#dc2626' });
+    doc.moveDown(0.2);
+    balanceRow(doc, 'Gastos operativos', fmt(totals.expenses));
+    balanceRow(doc, 'Total provisionado (ahorrado)', fmt(totals.provisions), { color: '#475569' });
+    balanceRow(doc, 'Total gastos reales', fmt(totals.expenses), { bold: true });
+    doc.moveDown(0.2);
+    balanceRow(doc, 'Resultado de caja', `${totals.result >= 0 ? '+' : ''}${fmt(totals.result)}`, {
+      bold: true,
+      color: totals.result >= 0 ? '#16a34a' : '#dc2626',
+    });
+    balanceRow(doc, 'Resultado devengado', `${totals.accrualResult >= 0 ? '+' : ''}${fmt(totals.accrualResult)}`, {
+      color: totals.accrualResult >= 0 ? '#16a34a' : '#dc2626',
+    });
+    balanceRow(doc, 'Mora por cobrar', fmt(totalMora), { bold: true, color: '#dc2626' });
     doc.moveDown(0.5);
 
-    // Tabla de períodos
+    // Detalle de periodos
     let cumulative = 0;
     for (const p of periods) {
       const total_billed    = parseFloat(p.total_billed) || 0;
       const total_collected = parseFloat(p.total_collected) || 0;
       const total_expenses  = parseFloat(p.total_expenses) || 0;
       const total_provisions= parseFloat(p.total_provisions) || 0;
-      const grand_total     = parseFloat(p.grand_total) > 0 ? parseFloat(p.grand_total) : total_expenses;
-      const balance         = Math.round((total_collected - grand_total) * 100) / 100;
+      const balance         = Math.round((total_collected - total_expenses) * 100) / 100;
+      const expenseItems    = Array.isArray(p.expense_items) ? p.expense_items : [];
+      const provisions      = Array.isArray(p.provisions) ? p.provisions : [];
+      const pending         = Math.max(0, total_billed - total_collected);
+      const accrualBalance  = Math.round((total_billed - total_expenses) * 100) / 100;
       cumulative           += balance;
 
+      ensureSpace(190);
       const periodName = `${MONTHS_ES[p.month]} ${p.year}`;
-      doc.fontSize(10).fillColor('#1e3a5f').font('Helvetica-Bold').text(periodName);
-      doc.font('Helvetica');
-      row(doc, 'Total facturado',    fmt(total_billed));
-      row(doc, 'Total cobrado',      fmt(total_collected));
-      row(doc, 'Gastos operativos',  fmt(total_expenses));
-      if (total_provisions > 0) {
-        row(doc, `Provisiones (${parseFloat(p.capital_reserve)||0 > 0 ? 'FC+' : ''}${parseFloat(p.bad_debt_provision)||0 > 0 ? 'PI' : ''})`,
-            fmt(total_provisions));
+      balanceHeading(doc, periodName.toUpperCase(), '#f8fafc');
+
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Ingresos', 50);
+      doc.moveDown(0.2);
+      balanceRow(doc, 'Facturado', fmt(total_billed), { indent: 10 });
+      balanceRow(doc, 'Cobrado', fmt(total_collected), { indent: 10, color: '#16a34a' });
+      balanceRow(doc, 'Por cobrar del periodo', fmt(pending), { indent: 10, color: pending > 0 ? '#dc2626' : '#64748b' });
+
+      ensureSpace(50);
+      doc.moveDown(0.1);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Gastos operativos', 50);
+      doc.moveDown(0.2);
+      if (expenseItems.length) {
+        for (const item of expenseItems) {
+          ensureSpace(24);
+          balanceRow(doc, item.name || 'Gasto', fmt(parseFloat(item.amount) || 0), {
+            indent: 20,
+            note: item.category || '',
+            labelColor: '#475569',
+          });
+        }
+      } else {
+        balanceRow(doc, 'Gastos operativos sin desglose', fmt(total_expenses), { indent: 20, labelColor: '#64748b' });
       }
-      row(doc, 'Total egresos',      fmt(grand_total));
-      doc.fontSize(10).fillColor(balance >= 0 ? '#16a34a' : '#dc2626');
-      row(doc, `Resultado — acumulado ${fmt(cumulative)}`, `${balance >= 0 ? '+' : ''}${fmt(balance)}`);
+      balanceRow(doc, 'Total gastos operativos', fmt(total_expenses), { bold: true, indent: 10 });
+
+      ensureSpace(50);
+      doc.moveDown(0.1);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Provisiones ahorradas', 50);
+      doc.moveDown(0.2);
+      if (provisions.length) {
+        for (const provision of provisions) {
+          ensureSpace(24);
+          balanceRow(doc, provision.name || 'Provisión', fmt(parseFloat(provision.amount) || 0), {
+            indent: 20,
+            labelColor: '#475569',
+          });
+        }
+      } else {
+        balanceRow(doc, 'Provisionado sin desglose', fmt(total_provisions), { indent: 20, labelColor: '#64748b' });
+      }
+      balanceRow(doc, 'Total provisionado (ahorrado)', fmt(total_provisions), { bold: true, indent: 10 });
+
+      doc.moveDown(0.1);
+      balanceDivider(doc, '#e2e8f0');
+      balanceRow(doc, 'Total gastos reales', fmt(total_expenses), { bold: true });
+      balanceRow(doc, 'Resultado de caja del periodo', `${balance >= 0 ? '+' : ''}${fmt(balance)}`, {
+        bold: true,
+        color: balance >= 0 ? '#16a34a' : '#dc2626',
+      });
+      balanceRow(doc, 'Resultado devengado del periodo', `${accrualBalance >= 0 ? '+' : ''}${fmt(accrualBalance)}`, {
+        color: accrualBalance >= 0 ? '#16a34a' : '#dc2626',
+      });
+      balanceRow(doc, 'Resultado acumulado de caja', `${cumulative >= 0 ? '+' : ''}${fmt(cumulative)}`, {
+        color: cumulative >= 0 ? '#16a34a' : '#dc2626',
+      });
       doc.fillColor('#1e293b');
       doc.moveDown(0.3);
-      doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke('#e2e8f0');
-      doc.moveDown(0.3);
-
-      if (doc.y > 720) { doc.addPage(); }
+      balanceDivider(doc, '#cbd5e1');
     }
 
-    // Estado de fondos
-    doc.moveDown();
-    doc.moveTo(40, doc.y).lineTo(555, doc.y).stroke('#94a3b8');
-    doc.moveDown(0.5);
-    doc.fontSize(11).fillColor('#1e40af').text('ESTADO DE FONDOS DE RESERVA');
-    doc.font('Helvetica').fontSize(10).fillColor('#1e293b');
-    doc.moveDown(0.3);
-    row(doc, 'Fondo de Capital',              fmt(funds['CAPITAL_RESERVE'] || 0));
-    row(doc, 'Provisión Alícuotas Incobrables', fmt(funds['BAD_DEBT'] || 0));
+    // Cuentas por cobrar
+    ensureSpace(70);
+    balanceHeading(doc, 'CUENTAS POR COBRAR');
+    balanceRow(doc, 'Mora por cobrar', fmt(totalMora), { bold: true, color: '#dc2626' });
 
     // Pie
     doc.moveDown(2);

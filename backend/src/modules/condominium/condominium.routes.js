@@ -1915,16 +1915,46 @@ router.get('/reports/balance/pdf', async (req, res) => {
     params
   );
 
-  const fundsRes = await query(
-    `SELECT fund_type, COALESCE(SUM(amount), 0)::float AS balance FROM condo_fund_entries GROUP BY fund_type`
+  const periodIds = periodsRes.rows.map(p => p.id);
+  let expenseItems = [], periodProvisions = [];
+  if (periodIds.length > 0) {
+    const [itemsRes, provisionsRes] = await Promise.all([
+      query(
+        `SELECT period_id, name, category, expense_type, amount::float AS amount
+         FROM condo_period_expense_items
+         WHERE period_id = ANY($1)
+         ORDER BY created_at`,
+        [periodIds]
+      ),
+      query(
+        `SELECT fe.period_id, fe.provision_id, COALESCE(pc.name, fe.fund_type) AS name,
+                fe.amount::float AS amount
+         FROM condo_fund_entries fe
+         LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+         WHERE fe.period_id = ANY($1) AND fe.entry_type = 'PROVISION'
+         ORDER BY fe.entry_date ASC`,
+        [periodIds]
+      ),
+    ]);
+    expenseItems = itemsRes.rows;
+    periodProvisions = provisionsRes.rows;
+  }
+
+  const periods = periodsRes.rows.map(period => ({
+    ...period,
+    expense_items: expenseItems.filter(item => item.period_id === period.id),
+    provisions: periodProvisions.filter(provision => provision.period_id === period.id),
+  }));
+
+  const moraRes = await query(
+    `SELECT COALESCE(SUM(mora_amount), 0)::float AS total_mora FROM condo_owners WHERE mora_amount > 0`
   );
-  const fundBalances = {};
-  for (const r of fundsRes.rows) fundBalances[r.fund_type] = parseFloat(r.balance);
+  const totalMora = parseFloat(moraRes.rows[0]?.total_mora) || 0;
 
   const cfgRes = await query('SELECT name FROM condo_config LIMIT 1');
   const condoName = cfgRes.rows[0]?.name || 'Condominio';
 
-  const buf = await generateBalancePdf({ condoName, periods: periodsRes.rows, funds: fundBalances, year, month_from, month_to });
+  const buf = await generateBalancePdf({ condoName, periods, totalMora, year, month_from, month_to });
   res.set('Content-Type', 'application/pdf');
   res.set('Content-Disposition', `attachment; filename="balance-${year || 'todo'}.pdf"`);
   res.send(buf);

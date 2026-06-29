@@ -305,11 +305,26 @@
             <div class="receipt-list">
               @for (receipt of bulkReceipts; track receipt.id || receipt.file.name + receipt.file.lastModified) {
                 <article class="receipt-card" [class.receipt-card--error]="receipt.status === 'error'" [class.receipt-card--done]="receipt.status === 'confirmed'">
-                  <div class="receipt-file">
-                    <i class="pi" [class.pi-file]="receipt.status !== 'confirmed'" [class.pi-check-circle]="receipt.status === 'confirmed'"></i>
-                    <div>
-                      <strong>{{ receipt.description ? 'Movimiento: ' + receipt.description : receipt.file.name }}</strong>
-                      <small>{{ receipt.description ? (receipt.paymentDate + ' · $' + (receipt.amount || 0).toFixed(2)) : ((receipt.file.size / 1024).toFixed(1) + ' KB') }}</small>
+                  <div class="receipt-card-header">
+                    <div class="receipt-file">
+                      <i class="pi" [class.pi-file]="receipt.status !== 'confirmed'" [class.pi-check-circle]="receipt.status === 'confirmed'"></i>
+                      <div>
+                        <strong>{{ receiptTitle(receipt) }}</strong>
+                        <small>{{ receiptSubtitle(receipt) }}</small>
+                      </div>
+                    </div>
+                    <div class="receipt-actions">
+                      @if (receipt.status !== 'scanning' && receipt.status !== 'confirming' && receipt.status !== 'confirmed') {
+                        <button pButton icon="pi pi-refresh" [rounded]="true" [text]="true" size="small"
+                          severity="secondary" (click)="retryReceiptOcr(receipt)"
+                          [pTooltip]="receipt.source === 'movement-pdf' || receipt.source === 'movement-row' ? 'Volver a importar movimientos' : 'Volver a ejecutar OCR'"
+                          tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"></button>
+                      }
+                      @if (receipt.status !== 'scanning' && receipt.status !== 'confirming') {
+                        <button pButton icon="pi pi-trash" [rounded]="true" [text]="true" size="small"
+                          severity="danger" (click)="removeBulkReceipt(receipt)"
+                          pTooltip="Quitar comprobante de la lista" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"></button>
+                      }
                     </div>
                   </div>
 
@@ -317,6 +332,7 @@
                     <div class="receipt-state"><i class="pi pi-spin pi-spinner"></i> Leyendo OCR…</div>
                   } @else if (receipt.status === 'error') {
                     <div class="receipt-state receipt-state--error"><i class="pi pi-times-circle"></i> {{ receipt.error }}
+                      <button pButton label="Reintentar OCR" icon="pi pi-refresh" size="small" [text]="true" (click)="retryReceiptOcr(receipt)"></button>
                       <button pButton label="Asignar manualmente" size="small" [text]="true" (click)="openManualAssignment(receipt)"></button>
                     </div>
                   } @else if (receipt.status === 'confirming') {

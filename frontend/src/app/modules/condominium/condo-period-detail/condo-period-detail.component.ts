@@ -24,10 +24,12 @@ import { AliquotPayment, CondoExpensePeriod, CondoPeriodExpenseItem, OcrOwnerMat
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | 'danger' | undefined;
 type BulkReceiptStatus = 'queued' | 'scanning' | 'ready' | 'error' | 'confirming' | 'confirmed';
+type BulkReceiptSource = 'receipt' | 'movement-pdf' | 'movement-row';
 
 interface BulkReceipt {
   id?: string;
   file: File;
+  source?: BulkReceiptSource;
   status: BulkReceiptStatus;
   scan?: OcrScanResult;
   match?: OcrOwnerMatch;
@@ -84,6 +86,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   importingMovements = false;
   showMovementLoading = false;
   bulkReceipts: BulkReceipt[] = [];
+  movementPdfFile: File | null = null;
   manualPeriods: CondoExpensePeriod[] = [];
   loadingManualPeriods = false;
 
@@ -249,7 +252,7 @@ export class CondoPeriodDetailComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files || []);
     if (!files.length || !this.period) return;
-    this.bulkReceipts.push(...files.map(file => ({ file, status: 'queued' as const })));
+    this.bulkReceipts.push(...files.map(file => ({ file, source: 'receipt' as const, status: 'queued' as const })));
     input.value = '';
     void this.processBulkQueue();
   }
@@ -264,10 +267,14 @@ export class CondoPeriodDetailComponent implements OnInit {
       return;
     }
 
+    this.movementPdfFile = file;
+    this.importMovementPdf(file);
+  }
+
+  private importMovementPdf(file: File) {
+    if (!this.period) return;
     this.importingMovements = true;
     this.showMovementLoading = true;
-    // Un estado de cuenta representa una nueva fuente de movimientos. No se
-    // deben conservar filas del PDF importado anteriormente en la vista.
     this.bulkReceipts = [];
     this.svc.importMovementPdf(file, this.period.id).subscribe({
       next: result => {
@@ -286,6 +293,7 @@ export class CondoPeriodDetailComponent implements OnInit {
           return {
             id: `${transaction.id}-${Date.now()}-${index}`,
             file,
+            source: 'movement-row',
             status: 'ready',
             scan,
             match: transaction.matches.length === 1
@@ -312,10 +320,20 @@ export class CondoPeriodDetailComponent implements OnInit {
         });
       },
       error: err => {
+        const message = err.error?.message || 'Intenta nuevamente con el PDF de movimientos.';
+        this.bulkReceipts = [{
+          id: `movement-error-${Date.now()}`,
+          file,
+          source: 'movement-pdf',
+          status: 'error',
+          error: message,
+          description: 'PDF de movimientos',
+        }];
+        this.showBulkUpload = true;
         this.msg.add({
           severity: 'error',
           summary: 'No se pudieron cargar los pagos',
-          detail: err.error?.message || 'Intenta nuevamente con el PDF de movimientos.',
+          detail: message,
         });
         this.importingMovements = false;
         this.showMovementLoading = false;
@@ -336,16 +354,7 @@ export class CondoPeriodDetailComponent implements OnInit {
         if (receipt.status !== 'queued') continue;
         receipt.status = 'scanning';
         try {
-          const scan = await firstValueFrom(this.svc.scanPaymentProof(receipt.file, periodId));
-          receipt.scan = scan;
-          receipt.match = scan.matches.length === 1 ? scan.matches[0] : undefined;
-          if (!receipt.match && scan.suggestedMatches?.length === 1) {
-            receipt.match = scan.suggestedMatches[0];
-            receipt.suggestedByAmount = true;
-          }
-          receipt.amount = this.readOcrAmount(scan.extractedData.amount);
-          receipt.paymentDate = this.toIsoDate(scan.extractedData.date);
-          receipt.status = 'ready';
+          await this.scanReceipt(receipt, periodId);
         } catch (err: any) {
           receipt.status = 'error';
           receipt.error = err.error?.message || 'No se pudo leer el comprobante.';
@@ -354,6 +363,73 @@ export class CondoPeriodDetailComponent implements OnInit {
     } finally {
       this.bulkProcessing = false;
     }
+  }
+
+  private async scanReceipt(receipt: BulkReceipt, periodId: string) {
+    const scan = await firstValueFrom(this.svc.scanPaymentProof(receipt.file, periodId));
+    receipt.scan = scan;
+    receipt.match = scan.matches.length === 1 ? scan.matches[0] : undefined;
+    receipt.suggestedByAmount = false;
+    if (!receipt.match && scan.suggestedMatches?.length === 1) {
+      receipt.match = scan.suggestedMatches[0];
+      receipt.suggestedByAmount = true;
+    }
+    receipt.amount = this.readOcrAmount(scan.extractedData.amount);
+    receipt.paymentDate = this.toIsoDate(scan.extractedData.date);
+    receipt.error = undefined;
+    receipt.showManualAssignment = false;
+    receipt.manualPeriodId = undefined;
+    receipt.manualPeriod = undefined;
+    receipt.manualPaymentId = undefined;
+    receipt.manualMatch = undefined;
+    receipt.status = 'ready';
+  }
+
+  retryReceiptOcr(receipt: BulkReceipt) {
+    if (receipt.status === 'scanning' || receipt.status === 'confirming' || receipt.status === 'confirmed') return;
+    if (receipt.source === 'movement-pdf' || receipt.source === 'movement-row') {
+      this.retryMovementImport();
+      return;
+    }
+    const periodId = this.period?.id;
+    if (!periodId) return;
+    receipt.status = 'scanning';
+    receipt.error = undefined;
+    void this.scanReceipt(receipt, periodId).catch((err: any) => {
+      receipt.status = 'error';
+      receipt.error = err.error?.message || 'No se pudo leer el comprobante.';
+      this.msg.add({ severity: 'error', summary: 'OCR falló', detail: receipt.error });
+    });
+  }
+
+  retryMovementImport() {
+    if (!this.movementPdfFile) {
+      this.msg.add({ severity: 'warn', summary: 'PDF no disponible', detail: 'Vuelve a seleccionar el PDF de movimientos.' });
+      return;
+    }
+    this.importMovementPdf(this.movementPdfFile);
+  }
+
+  removeBulkReceipt(receipt: BulkReceipt) {
+    if (receipt.status === 'scanning' || receipt.status === 'confirming') return;
+    const remove = () => {
+      this.bulkReceipts = this.bulkReceipts.filter(item => item !== receipt);
+      if (!this.bulkReceipts.some(item => item.movementProofUrl || item.movementProofPublicId)) {
+        this.movementPdfFile = null;
+      }
+    };
+    if (receipt.status === 'confirmed') {
+      this.confirm.confirm({
+        header: 'Quitar comprobante',
+        message: 'Este pago ya fue registrado. Solo se quitará de esta lista, no se eliminará el pago ni el archivo guardado.',
+        icon: 'pi pi-info-circle',
+        acceptLabel: 'Quitar de la lista',
+        rejectLabel: 'Cancelar',
+        accept: remove,
+      });
+      return;
+    }
+    remove();
   }
 
   private readOcrAmount(value: unknown): number | undefined {
@@ -386,6 +462,21 @@ export class CondoPeriodDetailComponent implements OnInit {
 
   receiptTargetPeriod(receipt: BulkReceipt): CondoExpensePeriod | null {
     return receipt.manualPeriod || this.period;
+  }
+
+  receiptTitle(receipt: BulkReceipt): string {
+    if (receipt.source === 'movement-pdf') return 'PDF de movimientos';
+    if (receipt.source === 'movement-row') return `Movimiento: ${receipt.description || 'Ingreso detectado'}`;
+    return receipt.file.name;
+  }
+
+  receiptSubtitle(receipt: BulkReceipt): string {
+    if (receipt.source === 'movement-pdf') return receipt.file.name;
+    if (receipt.source === 'movement-row') {
+      const amount = Number(receipt.amount || 0).toFixed(2);
+      return `${receipt.paymentDate || 'Sin fecha'} · $${amount}`;
+    }
+    return `${(receipt.file.size / 1024).toFixed(1)} KB`;
   }
 
   pendingAmount(receipt: BulkReceipt): number {

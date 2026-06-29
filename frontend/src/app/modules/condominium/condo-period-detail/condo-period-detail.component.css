@@ -33,6 +33,8 @@
     .upload-placeholder { text-align: center; display: flex; flex-direction: column; align-items: center; gap: .5rem; }
     .upload-btn { display: inline-block; cursor: pointer; padding: .4rem 1rem; background: #3b82f6; color: white; border-radius: 6px; font-size: .85rem; }
     .file-selected { display: flex; align-items: center; gap: .75rem; }
+    .receipt-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+    .receipt-actions { display: flex; align-items: center; gap: .15rem; flex-shrink: 0; }
     .file-size { font-size: .8rem; color: #6b7280; }
     .current-proof { background: #eff6ff; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .5rem; }
     .proof-info { margin-bottom: .5rem; }
@@ -47,3 +49,7 @@
     .period-closing-card h3 { margin: 1rem 0 .6rem; color: #1e3a5f; }
     .period-closing-card p { margin: 0; color: #475569; line-height: 1.5; }
     .period-closing-card span { display: block; margin-top: 1rem; color: #64748b; font-size: .85rem; }
+    @media (max-width: 640px) {
+      .receipt-card-header { align-items: stretch; flex-direction: column; }
+      .receipt-actions { justify-content: flex-end; }
+    }

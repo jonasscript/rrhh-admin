@@ -3,15 +3,14 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <h2 class="page-title">Libro de Ingresos y Egresos</h2>
-      <p class="page-subtitle">Balance financiero por período para presentación a propietarios</p>
+      <h2 class="page-title">Informe financiero del condominio</h2>
+      <p class="page-subtitle">Balance de ingresos, gastos, provisiones y cuentas por cobrar</p>
     </div>
     <button pButton icon="pi pi-file-pdf" label="Exportar PDF"
       severity="danger" [outlined]="true"
       [loading]="downloadingPdf" (click)="downloadPdf()"></button>
   </div>
 
-  <!-- Filters -->
   <div class="filters-bar">
     <div class="field">
       <label>Año</label>
@@ -35,54 +34,176 @@
   </div>
 
   @if (!loading && report) {
+    <section class="executive-band">
+      <div>
+        <span class="eyebrow">Resumen ejecutivo</span>
+        <h3>{{ monthLabel(filterMonthFrom || 1) }} - {{ monthLabel(filterMonthTo || 12) }} {{ filterYear }}</h3>
+        <p>
+          Recaudación {{ collectionRate }}% ·
+          {{ delinquentOwnersCount }} propietario(s) con mora ·
+          {{ totalDebtPeriods }} período(s) vencido(s)
+        </p>
+      </div>
+      <p-tag
+        [value]="operatingNetResult >= 0 ? 'Flujo positivo' : 'Flujo negativo'"
+        [severity]="operatingNetResult >= 0 ? 'success' : 'danger'" />
+    </section>
 
-    <!-- Summary cards -->
     <div class="summary-grid">
       <p-card styleClass="summ-card summ-card--billed">
         <div class="summ-content">
-          <span class="summ-label">Facturado</span>
+          <span class="summ-icon"><i class="pi pi-file-edit"></i></span>
+          <span class="summ-label">Ingresos</span>
           <span class="summ-value">{{ report.summary.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>Total emitido en alícuotas</small>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--collected">
         <div class="summ-content">
-          <span class="summ-label">Cobrado</span>
+          <span class="summ-icon"><i class="pi pi-wallet"></i></span>
+          <span class="summ-label">Ingresos cobrados</span>
           <span class="summ-value">{{ report.summary.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>{{ collectionRate }}% del total facturado</small>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card summ-card--savings">
+        <div class="summ-content">
+          <span class="summ-icon"><i class="pi pi-building-columns"></i></span>
+          <span class="summ-label">Provisionado ahorrado</span>
+          <span class="summ-value">{{ totalProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>Total reservado en fondos</small>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--expenses">
         <div class="summ-content">
-          <span class="summ-label">Gastos Operativos</span>
-          <span class="summ-value">{{ report.summary.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <span class="summ-icon"><i class="pi pi-receipt"></i></span>
+          <span class="summ-label">Gastos reales</span>
+          <span class="summ-value">{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>{{ expenseCoverageRate }}% de lo cobrado</small>
         </div>
       </p-card>
-      <p-card styleClass="summ-card summ-card--provisions">
+      <p-card styleClass="summ-card summ-card--receivable">
         <div class="summ-content">
-          <span class="summ-label">Provisiones</span>
-          <span class="summ-value">{{ report.summary.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <span class="summ-icon"><i class="pi pi-exclamation-triangle"></i></span>
+          <span class="summ-label">Mora por cobrar</span>
+          <span class="summ-value">{{ totalMora | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>{{ delinquentOwnersCount }} propietario(s) pendientes</small>
         </div>
       </p-card>
-      <p-card styleClass="summ-card" [ngClass]="report.summary.net_result >= 0 ? 'summ-card--positive' : 'summ-card--negative'">
+      <p-card styleClass="summ-card" [ngClass]="operatingNetResult >= 0 ? 'summ-card--positive' : 'summ-card--negative'">
         <div class="summ-content">
-          <span class="summ-label">Balance Neto</span>
-          <span class="summ-value">{{ sign(report.summary.net_result) }}{{ report.summary.net_result | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <span class="summ-icon"><i class="pi pi-chart-line"></i></span>
+          <span class="summ-label">Flujo neto</span>
+          <span class="summ-value">{{ sign(operatingNetResult) }}{{ operatingNetResult | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>Cobrado menos gastos reales</small>
         </div>
       </p-card>
     </div>
 
-    <!-- Main ledger table -->
-    <p-table [value]="report.rows" [loading]="loading" styleClass="p-datatable-sm" dataKey="period.id">
+    <div class="financial-layout">
+      <section class="statement-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Estado de resultados</span>
+            <h3>Ingresos y gastos</h3>
+          </div>
+        </div>
+
+        <div class="statement-group">
+          <div class="statement-row">
+            <span>Ingresos</span>
+            <strong>{{ report.summary.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row">
+            <span>Ingresos cobrados</span>
+            <strong class="text-green-600">{{ report.summary.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row">
+            <span>Pendiente del período consultado</span>
+            <strong class="text-red-500">{{ selectedPendingTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+        </div>
+
+        <div class="statement-group">
+          <div class="statement-row">
+            <span>Gastos operativos</span>
+            <strong>{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row">
+            <span>Total provisionado (ahorrado)</span>
+            <strong>{{ totalProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row statement-total">
+            <span>Total gastos reales</span>
+            <strong>{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+        </div>
+
+        <div class="statement-group statement-group--result">
+          <div class="statement-row">
+            <span>Resultado de caja</span>
+            <strong [ngClass]="operatingNetResult >= 0 ? 'text-green-600' : 'text-red-500'">
+              {{ sign(operatingNetResult) }}{{ operatingNetResult | currency:'USD':'symbol-narrow':'1.2-2' }}
+            </strong>
+          </div>
+          <div class="statement-row">
+            <span>Resultado devengado</span>
+            <strong [ngClass]="accrualResult >= 0 ? 'text-green-600' : 'text-red-500'">
+              {{ sign(accrualResult) }}{{ accrualResult | currency:'USD':'symbol-narrow':'1.2-2' }}
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="receivable-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">Cuentas por cobrar</span>
+            <h3>Mora acumulada</h3>
+          </div>
+          <strong>{{ totalMora | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+        </div>
+
+        @if (sortedMorosos.length) {
+          <div class="receivable-list">
+            @for (owner of sortedMorosos; track owner.id) {
+              <div class="receivable-row">
+                <div>
+                  <strong>{{ owner.fullName }}</strong>
+                  <span>Depto. {{ owner.apartmentNumber }} · {{ owner.overduePeriods || owner.debtPeriods?.length || 0 }} período(s)</span>
+                </div>
+                <b>{{ owner.moraAmount | currency:'USD':'symbol-narrow':'1.2-2' }}</b>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty-detail">No hay cuentas por cobrar en mora.</div>
+        }
+      </section>
+    </div>
+
+    <p-table [value]="report.rows" [loading]="loading" styleClass="p-datatable-sm report-table"
+      [tableStyle]="{ 'min-width': '1000px' }" responsiveLayout="scroll" dataKey="period.id">
+      <ng-template pTemplate="caption">
+        <div class="table-caption">
+          <div>
+            <span class="eyebrow">Detalle mensual</span>
+            <h3>Balance por período</h3>
+          </div>
+        </div>
+      </ng-template>
+
       <ng-template pTemplate="header">
         <tr>
           <th style="width:42px"></th>
           <th>Período</th>
           <th class="text-right">Facturado</th>
           <th class="text-right">Cobrado</th>
+          <th class="text-right">Por cobrar</th>
           <th class="text-center" style="width:70px">%</th>
-          <th class="text-right">Gastos Op.</th>
-          <th class="text-right">Provisiones</th>
-          <th class="text-right">Total Egresos</th>
-          <th class="text-right">Resultado</th>
+          <th class="text-right">Gastos reales</th>
+          <th class="text-right">Provisionado</th>
+          <th class="text-right">Flujo caja</th>
           <th class="text-right">Acumulado</th>
         </tr>
       </ng-template>
@@ -90,35 +211,52 @@
       <ng-template pTemplate="body" let-row>
         <tr>
           <td>
-            <button pButton icon="pi pi-chevron-right" [text]="true" [rounded]="true"
-              [ngClass]="isExpanded(row) ? 'pi-chevron-down' : 'pi-chevron-right'"
-              (click)="toggleRow(row)"></button>
+            <button pButton [icon]="isExpanded(row) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              [text]="true" [rounded]="true" (click)="toggleRow(row)"></button>
           </td>
           <td><strong>{{ monthLabel(row.period.month) }} {{ row.period.year }}</strong></td>
           <td class="text-right">{{ row.ingresos.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td class="text-right text-green-600">{{ row.ingresos.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right" [ngClass]="periodReceivable(row) > 0 ? 'text-red-500' : 'text-color-secondary'">
+            {{ periodReceivable(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
+          </td>
           <td class="text-center">
             <p-tag [value]="pctCollected(row) + '%'"
               [severity]="pctCollected(row) >= 90 ? 'success' : pctCollected(row) >= 60 ? 'warning' : 'danger'" />
           </td>
           <td class="text-right">{{ row.egresos.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td class="text-right text-color-secondary">{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
-          <td class="text-right">{{ row.egresos.grand_total | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
-          <td class="text-right" [ngClass]="row.balance >= 0 ? 'text-green-600' : 'text-red-500'">
-            <strong>{{ sign(row.balance) }}{{ row.balance | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          <td class="text-right" [ngClass]="periodCashResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
+            <strong>{{ sign(periodCashResult(row)) }}{{ periodCashResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </td>
-          <td class="text-right" [ngClass]="row.cumulative >= 0 ? '' : 'text-red-500'">
-            {{ sign(row.cumulative) }}{{ row.cumulative | currency:'USD':'symbol-narrow':'1.2-2' }}
+          <td class="text-right" [ngClass]="periodOperatingCumulative(row) >= 0 ? '' : 'text-red-500'">
+            {{ sign(periodOperatingCumulative(row)) }}{{ periodOperatingCumulative(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
           </td>
         </tr>
 
-        <!-- Expanded detail row -->
         @if (isExpanded(row)) {
           <tr class="detail-row">
             <td colspan="10">
-              <div class="detail-grid">
+              <div class="period-summary">
+                <div>
+                  <span>Resultado devengado</span>
+                  <strong [ngClass]="periodAccrualResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
+                    {{ sign(periodAccrualResult(row)) }}{{ periodAccrualResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
+                  </strong>
+                </div>
+                <div>
+                  <span>Flujo de caja operativo</span>
+                  <strong [ngClass]="periodCashResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
+                    {{ sign(periodCashResult(row)) }}{{ periodCashResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
+                  </strong>
+                </div>
+                <div>
+                  <span>Provisionado (ahorrado)</span>
+                  <strong>{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                </div>
+              </div>
 
-                <!-- Expense items -->
+              <div class="detail-grid">
                 <div class="detail-section">
                   <h4 class="detail-title">Detalle de gastos</h4>
                   @if (row.egresos.items?.length) {
@@ -133,33 +271,48 @@
                           </tr>
                         }
                       </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colspan="2"><strong>Total gastos</strong></td>
+                          <td class="text-right"><strong>{{ row.egresos.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   } @else {
-                    <p class="empty-detail">Sin ítems de gasto registrados</p>
+                    <p class="empty-detail">
+                      Sin ítems de gasto registrados.
+                      <strong>Total gastos: {{ row.egresos.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                    </p>
                   }
                 </div>
 
-                <!-- Fund entries -->
                 <div class="detail-section">
-                  <h4 class="detail-title">Movimientos de fondos del período</h4>
-                  @if (row.fund_moves?.length) {
+                  <h4 class="detail-title">Detalle de provisiones ahorradas</h4>
+                  @if (row.egresos.provisions?.length) {
                     <table class="detail-table">
-                      <thead><tr><th>Fondo</th><th>Tipo</th><th class="text-right">Monto</th></tr></thead>
+                      <thead><tr><th>Provisión</th><th class="text-right">Monto</th></tr></thead>
                       <tbody>
-                        @for (fe of row.fund_moves; track fe.id) {
+                        @for (provision of row.egresos.provisions; track provision.provision_id || provision.name) {
                           <tr>
-                            <td>{{ fe.fund_type === 'CAPITAL_RESERVE' ? 'Capital' : 'Incobrables' }}</td>
-                            <td><small class="text-color-secondary">{{ fe.entry_type }}</small></td>
-                            <td class="text-right">{{ fe.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                            <td>{{ provision.name }}</td>
+                            <td class="text-right">{{ provision.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
                           </tr>
                         }
                       </tbody>
+                      <tfoot>
+                        <tr>
+                          <td><strong>Total provisionado</strong></td>
+                          <td class="text-right"><strong>{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   } @else {
-                    <p class="empty-detail">Sin movimientos de fondos</p>
+                    <p class="empty-detail">
+                      Sin provisiones registradas.
+                      <strong>Total provisionado: {{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                    </p>
                   }
                 </div>
-
               </div>
             </td>
           </tr>
@@ -171,28 +324,7 @@
       </ng-template>
     </p-table>
 
-    <!-- Fund balances -->
-    @if (report.funds) {
-      <p-divider />
-      <div class="fund-balances">
-        <h3 class="section-title">Estado de Fondos</h3>
-        <div class="fund-bal-grid">
-          @for (entry of fundsEntries(report.funds); track entry.id) {
-            <div class="fund-bal-item">
-              <span class="fund-bal-label">{{ entry.name }}</span>
-              <span class="fund-bal-value">{{ entry.balance | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
-            </div>
-          }
-          <div class="fund-bal-item fund-bal-item--total">
-            <span class="fund-bal-label">Total fondos</span>
-            <span class="fund-bal-value">{{ totalFundsBalance(report.funds) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
-          </div>
-        </div>
-      </div>
-    }
-
   } @else if (loading) {
-    <div class="loading-placeholder">Cargando reporte...</div>
+    <div class="loading-placeholder">Cargando reporte financiero...</div>
   }
-
 </div>
