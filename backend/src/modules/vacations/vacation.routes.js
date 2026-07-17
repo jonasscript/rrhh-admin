@@ -76,9 +76,9 @@ router.post('/requests', async (req, res) => {
 
   const { rows } = await query(
     `INSERT INTO vacation_requests
-       (id, employee_id, start_date, end_date, days_requested, reason)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [newId(), data.employeeId, data.startDate, data.endDate, data.daysRequested, data.reason || null]
+       (id, employee_id, start_date, end_date, days_requested, reason, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $7) RETURNING *`,
+    [newId(), data.employeeId, data.startDate, data.endDate, data.daysRequested, data.reason || null, req.user.id]
   );
   success(res, rows[0], 201, 'Solicitud creada');
 });
@@ -111,7 +111,8 @@ router.patch('/requests/:id/review', authorize('ADMIN', 'HR', 'SUPERVISOR'), asy
 
     await client.query(
       `UPDATE vacation_requests SET
-         status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3
+         status = $1, reviewed_by = $2, reviewed_at = NOW(), review_notes = $3,
+         updated_by = $2
        WHERE id = $4`,
       [status, req.user.id, reviewNotes || null, req.params.id]
     );
@@ -120,9 +121,10 @@ router.patch('/requests/:id/review', authorize('ADMIN', 'HR', 'SUPERVISOR'), asy
       await client.query(
         `UPDATE vacation_balances SET
            available_days = available_days - $1,
-           used_days      = used_days      + $1
-         WHERE employee_id = $2`,
-        [vr.days_requested, vr.employee_id]
+           used_days      = used_days      + $1,
+           updated_by     = $2
+         WHERE employee_id = $3`,
+        [vr.days_requested, req.user.id, vr.employee_id]
       );
     }
 
@@ -147,9 +149,10 @@ router.post('/accrue', authorize('ADMIN', 'HR'), async (req, res) => {
     `UPDATE vacation_balances SET
        available_days    = available_days + $1,
        accrued_days      = accrued_days   + $1,
-       last_accrual_date = NOW()
-     WHERE employee_id = $2 RETURNING *`,
-    [days, employeeId]
+       last_accrual_date = NOW(),
+       updated_by        = $2
+     WHERE employee_id = $3 RETURNING *`,
+    [days, req.user.id, employeeId]
   );
   if (!rows[0]) throw new AppError('Empleado no encontrado', 404);
   success(res, rows[0], 200, `${days} días acumulados`);

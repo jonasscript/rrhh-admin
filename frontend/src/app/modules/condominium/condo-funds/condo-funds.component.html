@@ -20,7 +20,7 @@
                 {{ (getFacet(prov.id)?.balance ?? 0) | currency:'USD':'symbol-narrow':'1.2-2' }}
               </span>
               <span class="fund-hint">
-                @if (prov.calc_type === 'PERCENTAGE') { {{ prov.value }}% sobre gastos del período }
+                @if (prov.calc_type === 'PERCENTAGE') { {{ prov.value }}% sobre gastos y provisiones no porcentuales }
                 @else { Monto fijo ${{ prov.value | number:'1.2-2' }} por período }
               </span>
             </div>

@@ -6,9 +6,12 @@ import { CalendarModule } from 'primeng/calendar';
 import { DropdownModule } from 'primeng/dropdown';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { CheckboxModule } from 'primeng/checkbox';
+import { InputNumberModule } from 'primeng/inputnumber';
 import { DialogModule } from 'primeng/dialog';
 import { ToastModule } from 'primeng/toast';
-import { MessageService } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
+import { InputTextModule } from 'primeng/inputtext';
+import { MessageService, PrimeNGConfig } from 'primeng/api';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../../environments/environment';
 
@@ -35,6 +38,17 @@ interface Assignment {
   color: string;
 }
 
+interface VacationBlock {
+  id: string;
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  daysRequested: number;
+  reason?: string;
+  firstName: string;
+  lastName: string;
+}
+
 interface RotationRoleView {
   key: RotationRole;
   label: string;
@@ -43,11 +57,30 @@ interface RotationRoleView {
   schedule: string;
 }
 
-const ROLE_META: Record<RotationRole, { label: string; match: string[] }> = {
-  morning: { label: 'Mañana',   match: ['mañana', 'manana', 'diurno'] },
-  afternoon: { label: 'Tarde',  match: ['tarde', 'vespertino'] },
-  night: { label: 'Noche',      match: ['noche', 'nocturno'] },
-  rest: { label: 'Descanso',    match: ['descanso'] },
+const ROLE_META: Record<RotationRole, { label: string; match: string[]; startTime: string; endTime: string }> = {
+  morning: { label: 'Mañana',   match: ['mañana', 'manana', 'diurno'], startTime: '07:00', endTime: '15:00' },
+  afternoon: { label: 'Tarde',  match: ['tarde', 'vespertino'], startTime: '15:00', endTime: '21:00' },
+  night: { label: 'Noche',      match: ['noche', 'nocturno'], startTime: '21:00', endTime: '07:00' },
+  rest: { label: 'Descanso',    match: ['descanso'], startTime: '00:00', endTime: '00:00' },
+};
+const GUARDS_PER_ROTATION = 4;
+const CALENDAR_SPANISH_LOCALE = {
+  firstDayOfWeek: 1,
+  dayNames: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+  dayNamesShort: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+  dayNamesMin: ['D', 'L', 'M', 'X', 'J', 'V', 'S'],
+  monthNames: [
+    'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+  ],
+  monthNamesShort: [
+    'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+    'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+  ],
+  today: 'Hoy',
+  clear: 'Limpiar',
+  dateFormat: 'dd/mm/yy',
+  weekHeader: 'Sem',
 };
 
 @Component({
@@ -57,13 +90,17 @@ const ROLE_META: Record<RotationRole, { label: string; match: string[] }> = {
   styleUrl: './shift-calendar.component.css',
   imports: [
     CommonModule, FormsModule, ButtonModule, CalendarModule, DropdownModule,
-    MultiSelectModule, CheckboxModule, DialogModule, ToastModule,
+    MultiSelectModule, CheckboxModule, InputNumberModule, DialogModule, ToastModule, TooltipModule,
+    InputTextModule,
   ],
   providers: [MessageService],
   templateUrl: './shift-calendar.component.html',
 })
 export class ShiftCalendarComponent implements OnInit {
+  readonly calendarLocale = CALENDAR_SPANISH_LOCALE;
+
   assignments = signal<Assignment[]>([]);
+  vacations = signal<VacationBlock[]>([]);
   guards = signal<{ label: string; value: string }[]>([]);
   templates = signal<ShiftTemplate[]>([]);
   currentMonth = signal(this.firstDayOfMonth(new Date()));
@@ -74,6 +111,7 @@ export class ShiftCalendarComponent implements OnInit {
 
   showGenerateDialog = false;
   showManualDialog = false;
+  showVacationDialog = false;
 
   generation = {
     employeeIds: [] as string[],
@@ -84,6 +122,15 @@ export class ShiftCalendarComponent implements OnInit {
     overwrite: false,
   };
   manual = { employeeId: '', shiftTemplateId: '', date: null as Date | null, assignmentId: '' };
+  vacationForm = {
+    employeeId: '',
+    replacementEmployeeId: '',
+    startDate: null as Date | null,
+    endDate: null as Date | null,
+    daysRequested: 15,
+    reason: '',
+    reorganize: true,
+  };
 
   readonly monthDays = computed(() => {
     const month = this.currentMonth();
@@ -112,7 +159,9 @@ export class ShiftCalendarComponent implements OnInit {
     return weeks;
   });
 
-  constructor(private http: HttpClient, private msg: MessageService) {}
+  constructor(private http: HttpClient, private msg: MessageService, private primeNgConfig: PrimeNGConfig) {
+    this.primeNgConfig.setTranslation(CALENDAR_SPANISH_LOCALE);
+  }
 
   ngOnInit() {
     this.loadTemplates();
@@ -123,7 +172,7 @@ export class ShiftCalendarComponent implements OnInit {
           value: employee.id,
         }));
         this.guards.set(guards);
-        if (guards.length === 4) this.generation.employeeIds = guards.map((guard: any) => guard.value);
+        if (guards.length === GUARDS_PER_ROTATION) this.generation.employeeIds = guards.map((guard: any) => guard.value);
       },
       error: () => this.msg.add({ severity: 'error', summary: 'No se pudieron cargar los guardias' }),
     });
@@ -133,7 +182,7 @@ export class ShiftCalendarComponent implements OnInit {
   loadTemplates() {
     this.http.get<any>(`${environment.apiUrl}/shifts/templates`).subscribe({
       next: (response) => {
-        this.templates.set(response.data);
+        this.templates.set(response.data.map((template: ShiftTemplate) => this.withOfficialTimes(template)));
         this.setSuggestedTemplates();
       },
       error: () => this.msg.add({ severity: 'error', summary: 'No se pudieron cargar las plantillas de turno' }),
@@ -146,13 +195,23 @@ export class ShiftCalendarComponent implements OnInit {
     this.loading.set(true);
     this.http.get<any>(`${environment.apiUrl}/shifts/assignments?start=${start}&end=${end}`).subscribe({
       next: (response) => {
-        this.assignments.set(response.data);
+        this.assignments.set(response.data.map((assignment: Assignment) => this.withOfficialTimes(assignment)));
         this.loading.set(false);
+        this.loadVacations();
       },
       error: () => {
         this.loading.set(false);
         this.msg.add({ severity: 'error', summary: 'No se pudo cargar el horario' });
       },
+    });
+  }
+
+  loadVacations() {
+    const start = this.toIsoDate(this.monthDays()[0]);
+    const end = this.toIsoDate(this.monthDays()[this.monthDays().length - 1]);
+    this.http.get<any>(`${environment.apiUrl}/shifts/vacations?start=${start}&end=${end}`).subscribe({
+      next: (response) => this.vacations.set(response.data || []),
+      error: () => this.msg.add({ severity: 'error', summary: 'No se pudieron cargar las vacaciones' }),
     });
   }
 
@@ -165,7 +224,7 @@ export class ShiftCalendarComponent implements OnInit {
         label: ROLE_META[key].label,
         templateId,
         color: template?.color || '#94a3b8',
-        schedule: key === 'rest' ? 'Día libre' : template ? `${this.shortTime(template.start_time)} – ${this.shortTime(template.end_time)}` : 'Sin configurar',
+        schedule: this.officialSchedule(key),
       };
     });
   }
@@ -182,7 +241,7 @@ export class ShiftCalendarComponent implements OnInit {
     const roles = this.rotationRoles();
     return roles.every((role) => !!role.templateId) && this.monthDays().every((day) => {
       const assigned = roles.map((role) => this.getRoleAssignment(day, role));
-      return assigned.every(Boolean) && new Set(assigned.map((item) => item!.employee_id)).size === 4;
+      return assigned.every(Boolean) && new Set(assigned.map((item) => item!.employee_id)).size === roles.length;
     });
   }
 
@@ -191,7 +250,7 @@ export class ShiftCalendarComponent implements OnInit {
       total + this.rotationRoles().filter((role) => !!this.getRoleAssignment(day, role)).length, 0);
   }
 
-  expectedCells(): number { return this.monthDays().length * 4; }
+  expectedCells(): number { return this.monthDays().length * this.rotationRoles().length; }
 
   prevMonth() {
     const month = this.currentMonth();
@@ -223,12 +282,33 @@ export class ShiftCalendarComponent implements OnInit {
       date: day ? new Date(day) : new Date(this.currentMonth()),
       assignmentId: assignment?.id || '',
     };
+    if (day && this.manual.employeeId && this.isEmployeeOnVacation(this.manual.employeeId, day)) {
+      this.manual.employeeId = '';
+    }
     this.showManualDialog = true;
   }
 
+  openVacationDialog(day?: Date) {
+    const selectedDay = day || new Date(this.currentMonth());
+    this.vacationForm = {
+      employeeId: '',
+      replacementEmployeeId: '',
+      startDate: new Date(selectedDay),
+      endDate: this.addCalendarDays(selectedDay, 14),
+      daysRequested: 15,
+      reason: '',
+      reorganize: true,
+    };
+    this.showVacationDialog = true;
+  }
+
   generateRotation() {
-    if (this.generation.employeeIds.length !== 4) {
-      this.msg.add({ severity: 'warn', summary: 'Selecciona cuatro guardias', detail: 'La rotación del ejemplo requiere cuatro guardias.' });
+    if (this.generation.employeeIds.length !== GUARDS_PER_ROTATION) {
+      this.msg.add({
+        severity: 'warn',
+        summary: 'Selecciona cuatro guardias',
+        detail: 'La rotación usa cuatro guardias: tres cubren turnos y uno descansa cada día.',
+      });
       return;
     }
     const days = this.monthDays();
@@ -287,6 +367,52 @@ export class ShiftCalendarComponent implements OnInit {
     });
   }
 
+  saveVacation() {
+    if (!this.vacationForm.employeeId || !this.vacationForm.startDate || !this.vacationForm.daysRequested) {
+      this.msg.add({ severity: 'warn', summary: 'Completa empleado, fecha inicial y días' });
+      return;
+    }
+    const startDate = this.toIsoDate(this.vacationForm.startDate);
+    const endDate = this.toIsoDate(this.vacationEndDate()!);
+    if (this.vacationForm.reorganize && !this.vacationForm.replacementEmployeeId) {
+      this.msg.add({ severity: 'warn', summary: 'Selecciona el reemplazo', detail: 'Elige quién cubrirá los turnos del guardia en vacaciones.' });
+      return;
+    }
+    if (this.vacationForm.reorganize && this.vacationForm.replacementEmployeeId === this.vacationForm.employeeId) {
+      this.msg.add({ severity: 'warn', summary: 'Reemplazo inválido', detail: 'El reemplazo debe ser distinto al guardia que sale de vacaciones.' });
+      return;
+    }
+
+    this.saving.set(true);
+    this.http.post<any>(`${environment.apiUrl}/shifts/vacations`, {
+      employeeId: this.vacationForm.employeeId,
+      replacementEmployeeId: this.vacationForm.reorganize ? this.vacationForm.replacementEmployeeId : undefined,
+      startDate,
+      endDate,
+      daysRequested: this.vacationForm.daysRequested,
+      reason: this.vacationForm.reason || undefined,
+      reorganize: this.vacationForm.reorganize,
+    }).subscribe({
+      next: (response) => {
+        this.saving.set(false);
+        this.showVacationDialog = false;
+        this.loadMonth();
+        const reorg = response.data?.reorganization;
+        this.msg.add({
+          severity: 'success',
+          summary: 'Vacaciones registradas',
+          detail: reorg
+            ? `Turnos afectados: ${reorg.affected}. Reasignados: ${reorg.reassigned}. Pendientes: ${reorg.unresolved}.`
+            : undefined,
+        });
+      },
+      error: (error) => {
+        this.saving.set(false);
+        this.msg.add({ severity: 'error', summary: 'No se registraron las vacaciones', detail: error.error?.message });
+      },
+    });
+  }
+
   removeManualAssignment() {
     if (!this.manual.assignmentId) return;
     this.saving.set(true);
@@ -333,9 +459,67 @@ export class ShiftCalendarComponent implements OnInit {
     return `Semana del ${validDays[0].getDate()} al ${validDays[validDays.length - 1].getDate()}`;
   }
 
+  monthTitle(date: Date): string {
+    return new Intl.DateTimeFormat('es-EC', { month: 'long', year: 'numeric' }).format(date);
+  }
+
+  dayTitle(day: Date): string {
+    const weekDay = new Intl.DateTimeFormat('es-EC', { weekday: 'short' }).format(day).replace('.', '');
+    return `${weekDay} ${day.getDate()}`;
+  }
+
   employeeName(assignment: Assignment): string { return `${assignment.first_name} ${assignment.last_name}`; }
   isToday(day: Date): boolean { return this.toIsoDate(day) === this.toIsoDate(new Date()); }
   shortTime(time: string): string { return String(time || '').slice(0, 5); }
+  vacationName(vacation: VacationBlock): string { return `${vacation.firstName} ${vacation.lastName}`.trim(); }
+
+  vacationsForDay(day: Date): VacationBlock[] {
+    const date = this.toIsoDate(day);
+    return this.vacations().filter((vacation) => vacation.startDate.slice(0, 10) <= date && vacation.endDate.slice(0, 10) >= date);
+  }
+
+  vacationTooltip(day: Date): string {
+    return this.vacationsForDay(day).map((vacation) => this.vacationName(vacation)).join(', ');
+  }
+
+  isEmployeeOnVacation(employeeId: string, day: Date): boolean {
+    const date = this.toIsoDate(day);
+    return this.vacations().some((vacation) =>
+      vacation.employeeId === employeeId &&
+      vacation.startDate.slice(0, 10) <= date &&
+      vacation.endDate.slice(0, 10) >= date
+    );
+  }
+
+  availableGuardsForManual() {
+    if (!this.manual.date) return this.guards();
+    const date = this.toIsoDate(this.manual.date);
+    return this.guards().filter((guard) => !this.vacations().some((vacation) =>
+      vacation.employeeId === guard.value &&
+      vacation.startDate.slice(0, 10) <= date &&
+      vacation.endDate.slice(0, 10) >= date
+    ));
+  }
+
+  onManualDateChanged() {
+    if (!this.manual.employeeId) return;
+    const stillAvailable = this.availableGuardsForManual().some((guard) => guard.value === this.manual.employeeId);
+    if (!stillAvailable) this.manual.employeeId = '';
+  }
+
+  replacementGuardOptions() {
+    return this.guards().filter((guard) => guard.value !== this.vacationForm.employeeId);
+  }
+
+  vacationEndDate(): Date | null {
+    if (!this.vacationForm.startDate || !this.vacationForm.daysRequested) return null;
+    return this.addCalendarDays(this.vacationForm.startDate, this.vacationForm.daysRequested - 1);
+  }
+
+  vacationReturnDate(): Date | null {
+    const endDate = this.vacationEndDate();
+    return endDate ? this.addCalendarDays(endDate, 1) : null;
+  }
 
   private setSuggestedTemplates() {
     for (const key of Object.keys(ROLE_META) as RotationRole[]) {
@@ -351,9 +535,33 @@ export class ShiftCalendarComponent implements OnInit {
     return ROLE_META[role].match.some((word) => normalized.includes(word));
   }
 
+  private officialSchedule(role: RotationRole): string {
+    if (role === 'rest') return 'Día libre';
+    const meta = ROLE_META[role];
+    return `${meta.startTime} – ${meta.endTime}`;
+  }
+
+  private roleForName(name: string): RotationRole | null {
+    return (Object.keys(ROLE_META) as RotationRole[]).find((role) => this.matchesRole(name, role)) || null;
+  }
+
+  private withOfficialTimes<T extends { name?: string; shift_name?: string; start_time: string; end_time: string }>(item: T): T {
+    const role = this.roleForName(item.name || item.shift_name || '');
+    if (!role) return item;
+    return {
+      ...item,
+      start_time: ROLE_META[role].startTime,
+      end_time: ROLE_META[role].endTime,
+    };
+  }
+
   private firstDayOfMonth(date: Date): Date { return new Date(date.getFullYear(), date.getMonth(), 1); }
 
   private toIsoDate(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  private addCalendarDays(date: Date, days: number): Date {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
   }
 }

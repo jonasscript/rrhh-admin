@@ -104,10 +104,10 @@ router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
   const id     = newId();
 
   const { rows } = await query(
-    `INSERT INTO users (id, email, password, role)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO users (id, email, password, role, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $5)
      RETURNING id, email, role, is_active, created_at`,
-    [id, email, hashed, role]
+    [id, email, hashed, role, req.user.id]
   );
 
   success(res, rows[0], 201, 'Usuario registrado exitosamente');
@@ -127,6 +127,9 @@ router.put('/:id', authorize('ADMIN', 'HR'), async (req, res) => {
 
   if (data.role !== undefined)     { fields.push(`role = $${idx}`);      params.push(data.role);     idx++; }
   if (data.isActive !== undefined) { fields.push(`is_active = $${idx}`); params.push(data.isActive); idx++; }
+  fields.push(`updated_by = $${idx}`);
+  params.push(req.user.id);
+  idx++;
 
   params.push(req.params.id);
 
@@ -142,10 +145,10 @@ router.put('/:id', authorize('ADMIN', 'HR'), async (req, res) => {
 // ── DELETE /users/:id ─────────────────────────────────────────
 // Desactivar usuario (soft delete — no borra el registro)
 router.delete('/:id', authorize('ADMIN'), async (req, res) => {  const { rows } = await query(
-    `UPDATE users SET is_active = false
-     WHERE id = $1
+    `UPDATE users SET is_active = false, updated_by = $1
+     WHERE id = $2
      RETURNING id, email, is_active`,
-    [req.params.id]
+    [req.user.id, req.params.id]
   );
   if (!rows[0]) throw new AppError('Usuario no encontrado', 404);
   success(res, rows[0], 200, 'Usuario desactivado');
@@ -160,7 +163,10 @@ router.post('/:id/reset-password', authorize('ADMIN', 'HR'), async (req, res) =>
   if (!existing.rows[0]) throw new AppError('Usuario no encontrado', 404);
 
   const hashed = await bcrypt.hash(newPassword, 12);
-  await query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.params.id]);
+  await query(
+    'UPDATE users SET password = $1, updated_by = $2 WHERE id = $3',
+    [hashed, req.user.id, req.params.id]
+  );
 
   success(res, null, 200, 'Contraseña restablecida exitosamente');
 });

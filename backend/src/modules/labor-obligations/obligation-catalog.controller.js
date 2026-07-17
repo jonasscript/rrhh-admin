@@ -34,8 +34,9 @@ const createObligation = async (req, res) => {
   const { rows } = await query(
     `INSERT INTO obligation_catalog
        (id, code, name, description, calc_type, default_value, payer, recipient,
-        is_system, is_active, display_order, payment_mode, payment_month, payment_day)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9, $10, $11, $12, $13)
+        is_system, is_active, display_order, payment_mode, payment_month, payment_day,
+        created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9, $10, $11, $12, $13, $14, $14)
      RETURNING *`,
     [
       newId(),
@@ -51,6 +52,7 @@ const createObligation = async (req, res) => {
       data.payment_mode  ?? 'MONTHLY',
       data.payment_month ?? null,
       data.payment_day   ?? null,
+      req.user.id,
     ]
   );
   success(res, rows[0], 201, 'Obligación creada');
@@ -109,6 +111,9 @@ const updateObligation = async (req, res) => {
 
   if (fields.length === 0) throw new AppError('Nada que actualizar', 400);
 
+  fields.push(`updated_by = $${idx++}`);
+  vals.push(req.user.id);
+
   vals.push(id);
   const { rows } = await query(
     `UPDATE obligation_catalog SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
@@ -138,8 +143,8 @@ const deactivateObligation = async (req, res) => {
   }
 
   const { rows } = await query(
-    `UPDATE obligation_catalog SET is_active = FALSE WHERE id = $1 RETURNING *`,
-    [id]
+    `UPDATE obligation_catalog SET is_active = FALSE, updated_by = $1 WHERE id = $2 RETURNING *`,
+    [req.user.id, id]
   );
   success(res, rows[0], 200, 'Obligación desactivada');
 };

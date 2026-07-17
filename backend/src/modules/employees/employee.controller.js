@@ -88,9 +88,9 @@ const create = async (req, res) => {
     if (data.createUser) {
       const hashed = await bcrypt.hash('Temporal123!', 12);
       const userRes = await client.query(
-        `INSERT INTO users (id, email, password, role)
-         VALUES ($1, $2, $3, 'EMPLEADO') RETURNING id`,
-        [newId(), data.email, hashed]
+        `INSERT INTO users (id, email, password, role, created_by, updated_by)
+         VALUES ($1, $2, $3, 'EMPLEADO', $4, $4) RETURNING id`,
+        [newId(), data.email, hashed, req.user.id]
       );
       userId = userRes.rows[0].id;
     }
@@ -99,8 +99,8 @@ const create = async (req, res) => {
       `INSERT INTO employees
          (id, user_id, department_id, first_name, last_name, cedula, email, phone, address,
           birth_date, position, contract_type, start_date, end_date, base_salary,
-          iess_affiliate, bank_name, bank_account)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          iess_affiliate, bank_name, bank_account, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)
        RETURNING *`,
       [
         newId(),
@@ -111,13 +111,14 @@ const create = async (req, res) => {
         data.startDate, data.endDate || null, data.baseSalary,
         data.iessAffiliate,
         data.bankName || null, data.bankAccount || null,
+        req.user.id,
       ]
     );
 
     // Crear saldo de vacaciones inicial
     await client.query(
-      'INSERT INTO vacation_balances (id, employee_id) VALUES ($1, $2)',
-      [newId(), empRes.rows[0].id]
+      'INSERT INTO vacation_balances (id, employee_id, created_by, updated_by) VALUES ($1, $2, $3, $3)',
+      [newId(), empRes.rows[0].id, req.user.id]
     );
 
     // Crear registro de obligaciones laborales (vacío por defecto)
@@ -166,6 +167,10 @@ const update = async (req, res) => {
 
   if (!fields.length) throw new AppError('Sin campos para actualizar', 400);
 
+  fields.push(`updated_by = $${idx}`);
+  params.push(req.user.id);
+  idx++;
+
   params.push(req.params.id);
   const { rows } = await query(
     `UPDATE employees SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
@@ -178,8 +183,8 @@ const update = async (req, res) => {
 // DELETE /employees/:id
 const remove = async (req, res) => {
   const { rows } = await query(
-    `UPDATE employees SET status = 'INACTIVE' WHERE id = $1 RETURNING id`,
-    [req.params.id]
+    `UPDATE employees SET status = 'INACTIVE', updated_by = $1 WHERE id = $2 RETURNING id`,
+    [req.user.id, req.params.id]
   );
   if (!rows[0]) throw new AppError('Empleado no encontrado', 404);
   success(res, null, 200, 'Empleado desactivado');

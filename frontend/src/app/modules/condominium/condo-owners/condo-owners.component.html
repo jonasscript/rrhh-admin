@@ -12,6 +12,8 @@
         <div class="header-actions">
           <!-- Input oculto para selección de archivo Excel -->
           <input #xlsxInput type="file" accept=".xlsx,.xls" hidden (change)="onImportFile($event)" />
+          <button pButton icon="pi pi-chart-line" label="Reporte pagos y moras"
+            severity="help" [outlined]="true" (click)="openHistoryReport()"></button>
           <button pButton icon="pi pi-file-excel" label="Importar Excel"
             severity="secondary" [loading]="importing"
             (click)="xlsxInput.click()"></button>
@@ -63,6 +65,116 @@
         </ng-template>
       </p-table>
     </div>
+
+    <!-- Payment and mora history report -->
+    <p-dialog [(visible)]="showHistoryReport" header="Reporte de pagos y moras de propietarios"
+      [modal]="true" [style]="{width: '1100px', maxWidth: '96vw'}" [draggable]="false">
+      <div class="report-filters">
+        <label>
+          <span>Propietario</span>
+          <p-dropdown
+            [(ngModel)]="historyOwnerId"
+            [options]="historyOwnerOptions"
+            optionLabel="label"
+            optionValue="id"
+            [filter]="true"
+            filterBy="label,apartmentNumber,fullName"
+            placeholder="Buscar por nombre o departamento"
+            styleClass="w-full owner-report-filter"
+            [appendTo]="'body'"
+          />
+        </label>
+        <label>
+          <span>Desde</span>
+          <input pInputText type="date" [(ngModel)]="historyDateFrom" />
+        </label>
+        <label>
+          <span>Hasta</span>
+          <input pInputText type="date" [(ngModel)]="historyDateTo" />
+        </label>
+        <div class="report-actions">
+          <button pButton icon="pi pi-refresh" label="Generar" [loading]="loadingHistoryReport"
+            (click)="loadHistoryReport()"></button>
+          <button pButton icon="pi pi-download" label="Descargar CSV" severity="secondary"
+            [disabled]="loadingHistoryReport || historyReport.rows.length === 0"
+            (click)="downloadHistoryCsv()"></button>
+        </div>
+      </div>
+
+      <div class="report-summary-grid">
+        <div class="report-summary-item">
+          <span>Cargos emitidos</span>
+          <strong>{{ historyReport.summary.totalCharged | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+        </div>
+        <div class="report-summary-item">
+          <span>Pagos registrados</span>
+          <strong>{{ historyReport.summary.totalPaid | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+        </div>
+        <div class="report-summary-item">
+          <span>Aplicado a mora</span>
+          <strong>{{ historyReport.summary.totalAppliedToMora | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+        </div>
+        <div class="report-summary-item mora">
+          <span>Mora actual</span>
+          <strong>{{ historyReport.summary.currentMora | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+        </div>
+      </div>
+
+      <p-table [value]="historyReport.rows" [loading]="loadingHistoryReport" stripedRows responsiveLayout="scroll"
+        styleClass="p-datatable-sm report-table">
+        <ng-template pTemplate="header">
+          <tr>
+            <th style="width:95px">Fecha</th>
+            <th style="width:90px">Depto.</th>
+            <th style="min-width:160px">Propietario</th>
+            <th style="min-width:190px">Concepto</th>
+            <th style="width:120px">Período</th>
+            <th style="width:95px">Estado</th>
+            <th class="text-right" style="width:120px">Movimiento</th>
+            <th class="text-right">Cargo</th>
+            <th class="text-right">Pago</th>
+            <th class="text-right">A período</th>
+            <th class="text-right">A mora</th>
+            <th class="text-right">Pendiente</th>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="body" let-row>
+          <tr [ngClass]="historyRowClass(row)">
+            <td>{{ row.movementDate | date:'dd/MM/yy' }}</td>
+            <td><strong>{{ row.apartmentNumber }}</strong></td>
+            <td>{{ row.ownerName }}</td>
+            <td>
+              <div class="statement-concept">
+                <p-tag
+                  [value]="historyConceptLabel(row)"
+                  [severity]="historyMovementSeverity(row)"
+                />
+                <small>{{ historyMovementHint(row) }}</small>
+              </div>
+            </td>
+            <td>{{ historyPeriodLabel(row) }}</td>
+            <td>{{ row.status ? paymentStatusLabel(row.status) : '—' }}</td>
+            <td class="text-right statement-amount" [ngClass]="historyAmountClass(row)">
+              {{ signedMoney(row) }}
+            </td>
+            <td class="text-right">{{ row.chargedAmount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+            <td class="text-right">{{ row.paidAmount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+            <td class="text-right">{{ row.amountForPeriod | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+            <td class="text-right">{{ (row.amountForMora || row.moraPaymentAmount) | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+            <td class="text-right" [class.report-mora-amount]="row.pendingAmount > 0">
+              {{ row.pendingAmount | currency:'USD':'symbol-narrow':'1.2-2' }}
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template pTemplate="emptymessage">
+          <tr>
+            <td colspan="12" class="text-center p-4 text-color-secondary">
+              No hay movimientos para los filtros seleccionados.
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </p-dialog>
 
     <!-- Import Result Dialog -->
     <p-dialog [(visible)]="showImportResult" header="Resultado de la Importación"

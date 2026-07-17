@@ -132,6 +132,53 @@
           </div>
         </p-card>
       </div>
+
+      <p-card styleClass="panel-card admin-expense-panel">
+        <ng-template pTemplate="header">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Gastos administrativos</span>
+              <h3>Resumen del mes</h3>
+              <p>Compras, servicios del edificio y mantenimientos eventuales.</p>
+            </div>
+            <p-tag
+              [value]="currency(adminExpenseSummary?.total || 0)"
+              [severity]="(adminExpenseSummary?.total || 0) > 0 ? 'warning' : 'secondary'" />
+          </div>
+        </ng-template>
+
+        <div class="admin-expense-summary">
+          <div>
+            <span>Administración</span>
+            <strong>{{ currency(adminExpenseSummary?.administrative || 0) }}</strong>
+          </div>
+          <div>
+            <span>Servicios edificio</span>
+            <strong>{{ currency(adminExpenseSummary?.building_services || 0) }}</strong>
+          </div>
+          <div>
+            <span>Mantenimientos</span>
+            <strong>{{ currency(adminExpenseSummary?.maintenance || 0) }}</strong>
+          </div>
+          <div>
+            <span>Otros</span>
+            <strong>{{ currency(adminExpenseSummary?.other || 0) }}</strong>
+          </div>
+        </div>
+
+        @if ((adminExpenseSummary?.latest?.length || 0) > 0) {
+          <div class="admin-expense-latest">
+            @for (expense of adminExpenseSummary?.latest || []; track expense.id) {
+              <div>
+                <span>{{ expense.vendor }}</span>
+                <strong>{{ currency(expense.amount) }}</strong>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="empty-state">Aún no hay gastos administrativos registrados.</div>
+        }
+      </p-card>
     }
   }
 </div>

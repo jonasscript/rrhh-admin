@@ -17,6 +17,19 @@ DELETE FROM aliquot_payment_extras e
 USING aliquot_payments ap
 WHERE e.payment_id = ap.id;
 
+-- Detalle histórico de abonos/comprobantes de alícuotas.
+-- Esta tabla es nueva; se valida existencia para mantener compatibilidad
+-- con bases que aún no han aplicado la migración.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'aliquot_payment_records'
+  ) THEN
+    DELETE FROM aliquot_payment_records;
+  END IF;
+END $$;
+
 -- Movimientos de fondos generados o vinculados a cualquier período.
 -- Algunas instalaciones antiguas no tienen aún la columna period_id; se
 -- verifica antes de referenciarla para que la limpieza no falle.
@@ -35,18 +48,20 @@ END $$;
 -- Snapshot de gastos usados al crear cada período.
 DELETE FROM condo_period_expense_items;
 
--- Comprobantes, pagos y estado de cada alícuota.
+-- Historial de abonos a mora. Como este script reinicia la mora de los
+-- propietarios, también elimina su historial para evitar saldos en cero con
+-- abonos antiguos visibles en el reporte de morosidad.
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'mora_payment_records'
   ) THEN
-    DELETE FROM mora_payment_records
-    WHERE aliquot_payment_id IS NOT NULL;
+    DELETE FROM mora_payment_records;
   END IF;
 END $$;
 
+-- Comprobantes, pagos y estado de cada alícuota.
 DELETE FROM aliquot_payments;
 
 -- Incluye períodos cerrados: SQL no aplica la restricción de la API.

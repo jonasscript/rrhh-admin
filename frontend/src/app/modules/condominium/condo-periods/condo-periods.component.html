@@ -11,7 +11,7 @@
     <ng-template pTemplate="header">
       <tr>
         <th pSortableColumn="year">Período <p-sortIcon field="year" /></th>
-        <th>Gastos op.</th>
+        <th>Gastos operativos</th>
         <th>Provisiones</th>
         <th>Total general</th>
         <th>Pagos</th>
@@ -28,13 +28,13 @@
         <td class="text-center">
           <span class="payments-pill">{{ p.paid_count || 0 }} / {{ p.total_payments || 0 }}</span>
         </td>
-        <td><p-tag [value]="p.status" [severity]="severity(p.status)" /></td>
+        <td><p-tag [value]="periodStatusLabel(p.status)" [severity]="severity(p.status)" /></td>
         <td class="text-center">
           <button pButton icon="pi pi-eye" [rounded]="true" [text]="true"
             [routerLink]="['/condominium/periods', p.id]" pTooltip="Ver detalle"></button>
-          @if (p.status !== 'CLOSED') {
-            <button pButton icon="pi pi-images" [rounded]="true" [text]="true" severity="info"
-              (click)="openBulkUpload(p)" pTooltip="Cargar comprobantes" [disabled]="loadingBulkPeriod"></button>
+          @if (p.status === 'DRAFT') {
+            <button pButton icon="pi pi-pencil" [rounded]="true" [text]="true" severity="secondary"
+              (click)="openEditPeriod(p)" pTooltip="Editar período" [disabled]="saving"></button>
           }
           @if (p.status !== 'CLOSED') {
             <button pButton icon="pi pi-trash" [rounded]="true" [text]="true" severity="danger"
@@ -52,7 +52,7 @@
 <!-- ── Dialog: Nuevo período ─────────────────────────────── -->
 <p-dialog
   [(visible)]="showDialog"
-  header="Nuevo Período de Alícuotas"
+  [header]="editingPeriod ? 'Editar Período de Alícuotas' : 'Nuevo Período de Alícuotas'"
   [modal]="true"
   [style]="{ width: '660px', maxWidth: '96vw' }"
   [draggable]="false"
@@ -71,9 +71,11 @@
       </div>
       <div class="field">
         <label>Año</label>
-        <p-inputNumber
-          [(ngModel)]="selectedYear" [min]="2020" [max]="2050"
-          [useGrouping]="false" styleClass="w-full" inputStyleClass="w-full"
+        <p-dropdown
+          [options]="yearOptions" [(ngModel)]="selectedYear"
+          optionLabel="label" optionValue="value"
+          styleClass="w-full"
+          [filter]="true"
         />
       </div>
     </div>
@@ -242,7 +244,7 @@
               } @else {
                 <span class="amount-fixed" [class.amount-dim]="!p.selected">
                   @if (p.calc_type === 'PERCENTAGE') {
-                    {{ (grandTotal * p.value / 100) | currency:'USD':'symbol-narrow':'1.2-2' }}
+                    {{ provisionAmount(p.id) | currency:'USD':'symbol-narrow':'1.2-2' }}
                   } @else {
                     {{ p.value | currency:'USD':'symbol-narrow':'1.2-2' }}
                   }
@@ -288,8 +290,8 @@
   <ng-template pTemplate="footer">
     <button pButton label="Cancelar" icon="pi pi-times" class="p-button-text p-button-secondary"
       (click)="showDialog = false"></button>
-    <button pButton label="Crear período" icon="pi pi-check"
-      [loading]="saving" [disabled]="grandTotal === 0" (click)="create()"></button>
+    <button pButton [label]="editingPeriod ? 'Guardar cambios' : 'Crear período'" icon="pi pi-check"
+      [loading]="saving" [disabled]="grandTotal === 0" (click)="savePeriod()"></button>
   </ng-template>
 </p-dialog>
 

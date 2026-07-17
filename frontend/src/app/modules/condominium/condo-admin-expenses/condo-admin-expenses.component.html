@@ -1,0 +1,246 @@
+<p-toast />
+<p-confirmDialog />
+
+<div class="admin-expenses-page">
+  <header class="page-header">
+    <div>
+      <h2>Gastos administrativos</h2>
+      <p>Registra compras, servicios del edificio y mantenimientos eventuales con su recibo obligatorio.</p>
+    </div>
+    <button pButton icon="pi pi-plus" label="Nuevo gasto" [outlined]="true" (click)="startNew()"></button>
+  </header>
+
+  <section class="summary-grid">
+    <div class="metric metric--total">
+      <i class="pi pi-receipt"></i>
+      <span>Total filtrado</span>
+      <strong>{{ data.total | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+      <small>{{ data.items.length }} comprobante(s)</small>
+    </div>
+    <div class="metric metric--month">
+      <i class="pi pi-calendar"></i>
+      <span>Este mes</span>
+      <strong>{{ monthTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+      <small>Gastos con fecha del mes actual</small>
+    </div>
+    <div class="metric metric--eventual">
+      <i class="pi pi-wrench"></i>
+      <span>Servicios y mantenimientos</span>
+      <strong>{{ eventualTotal | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+      <small>Gastos eventuales del edificio</small>
+    </div>
+  </section>
+
+  <section class="history-panel">
+    <div class="panel-heading">
+      <div>
+        <span class="eyebrow">Libro de gastos</span>
+        <h3>Historial registrado</h3>
+      </div>
+    </div>
+
+    <div class="filters-bar">
+      <label class="field">
+        <span>Desde</span>
+        <input pInputText type="date" [(ngModel)]="filterDateFrom" />
+      </label>
+      <label class="field">
+        <span>Hasta</span>
+        <input pInputText type="date" [(ngModel)]="filterDateTo" />
+      </label>
+      <button pButton icon="pi pi-filter" label="Filtrar" (click)="applyFilters()" [loading]="loading"></button>
+      <button pButton icon="pi pi-times" label="Limpiar" [text]="true" severity="secondary" (click)="clearFilters()"></button>
+    </div>
+
+    <p-table [value]="data.items" [loading]="loading" styleClass="p-datatable-sm" [paginator]="data.items.length > 10" [rows]="10" [rowHover]="true">
+      <ng-template pTemplate="header">
+        <tr>
+          <th>Fecha</th>
+          <th>Detalle</th>
+          <th>Tipo</th>
+          <th class="text-right">Monto</th>
+          <th>Recibo</th>
+          <th style="width:96px">Acciones</th>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="body" let-item>
+        <tr>
+          <td>{{ item.expenseDate | date:'yyyy-MM-dd' }}</td>
+          <td>
+            <strong>{{ item.vendor }}</strong>
+            <span class="row-note">{{ item.description }}</span>
+          </td>
+          <td>
+            <p-tag [value]="typeLabel(item.expenseType)" [severity]="typeSeverity(item.expenseType)" />
+            <span class="row-note">{{ categoryLabel(item.category) }}</span>
+          </td>
+          <td class="text-right"><strong>{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+          <td>
+            <button type="button" class="receipt-link" (click)="openReceiptPreview(item)">
+              <i class="pi pi-paperclip"></i> Ver
+            </button>
+          </td>
+          <td class="actions">
+            <button pButton icon="pi pi-pencil" [text]="true" [rounded]="true" pTooltip="Editar" (click)="edit(item)"></button>
+            <button pButton icon="pi pi-trash" [text]="true" [rounded]="true" severity="danger" pTooltip="Eliminar" (click)="confirmDelete(item)"></button>
+          </td>
+        </tr>
+      </ng-template>
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <i class="pi pi-inbox"></i>
+              <span>No hay gastos administrativos registrados.</span>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </section>
+</div>
+
+<p-dialog
+  [(visible)]="showWizard"
+  [header]="editing ? 'Actualizar gasto administrativo' : 'Nuevo gasto administrativo'"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: 'min(760px, 94vw)' }"
+  [contentStyle]="{ overflow: 'visible' }"
+  styleClass="admin-expense-dialog"
+>
+  <div class="wizard-panel">
+    <div class="wizard-heading">
+      <div>
+        <span class="eyebrow">{{ editing ? 'Edición' : 'Registro' }}</span>
+        <h3>{{ editing ? 'Actualizar gasto' : 'Registrar gasto' }}</h3>
+      </div>
+    </div>
+
+    <div class="wizard-steps">
+      <button type="button" [class.active]="currentStep === 0" [class.done]="currentStep > 0" (click)="currentStep = 0">
+        <span>1</span> Clasificación
+      </button>
+      <button type="button" [class.active]="currentStep === 1" [class.done]="currentStep > 1" [disabled]="stepOneInvalid" (click)="currentStep = 1">
+        <span>2</span> Detalle
+      </button>
+      <button type="button" [class.active]="currentStep === 2" [disabled]="stepOneInvalid || stepTwoInvalid" (click)="currentStep = 2">
+        <span>3</span> Recibo
+      </button>
+    </div>
+
+    <form [formGroup]="form" class="wizard-form">
+      @if (currentStep === 0) {
+        <div class="step-content">
+          <label class="field">
+            <span>Fecha del gasto</span>
+            <input pInputText type="date" formControlName="expenseDate" />
+          </label>
+          <label class="field">
+            <span>Tipo de gasto</span>
+            <p-dropdown formControlName="expenseType" [options]="typeOptions" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+          </label>
+          <label class="field">
+            <span>Categoría</span>
+            <p-dropdown formControlName="category" [options]="categoryOptions" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+          </label>
+        </div>
+      }
+
+      @if (currentStep === 1) {
+        <div class="step-content">
+          <label class="field">
+            <span>Proveedor o comercio</span>
+            <input pInputText formControlName="vendor" placeholder="Ej. Ferretería Central" />
+          </label>
+          <label class="field">
+            <span>Descripción</span>
+            <textarea pInputTextarea formControlName="description" rows="3" placeholder="Ej. Compra de luminarias para parqueadero"></textarea>
+          </label>
+          <div class="two-cols">
+            <label class="field">
+              <span>Monto</span>
+              <p-inputNumber formControlName="amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+            </label>
+            <label class="field">
+              <span>Forma de pago</span>
+              <p-dropdown formControlName="paymentMethod" [options]="paymentOptions" optionLabel="label" optionValue="value" appendTo="body" styleClass="w-full" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Notas</span>
+            <textarea pInputTextarea formControlName="notes" rows="2" placeholder="Opcional"></textarea>
+          </label>
+        </div>
+      }
+
+      @if (currentStep === 2) {
+        <div class="step-content">
+          <div class="receipt-drop" [class.receipt-drop--ok]="selectedReceipt || editing">
+            <i class="pi" [ngClass]="selectedReceipt || editing ? 'pi-check-circle' : 'pi-upload'"></i>
+            <div>
+              <strong>{{ selectedReceipt ? selectedReceipt.name : editing ? 'Recibo existente conservado' : 'Adjuntar recibo obligatorio' }}</strong>
+              <span>JPG, PNG, WEBP o PDF. Máximo 5 MB.</span>
+            </div>
+            <label class="file-action">
+              <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden (change)="onReceiptSelected($event)" />
+              Seleccionar
+            </label>
+          </div>
+
+          <div class="review-box">
+            <div><span>Tipo</span><strong>{{ typeLabel(form.value.expenseType || 'ADMINISTRATIVE') }}</strong></div>
+            <div><span>Proveedor</span><strong>{{ form.value.vendor || 'Sin proveedor' }}</strong></div>
+            <div><span>Monto</span><strong>{{ form.value.amount || 0 | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></div>
+          </div>
+        </div>
+      }
+    </form>
+  </div>
+
+  <ng-template pTemplate="footer">
+    <div class="wizard-actions">
+      <button pButton label="Cancelar" icon="pi pi-times" [text]="true" severity="secondary" (click)="showWizard = false"></button>
+      <span class="wizard-actions__spacer"></span>
+      <button pButton label="Atrás" icon="pi pi-arrow-left" [text]="true" [disabled]="currentStep === 0" (click)="prevStep()"></button>
+      @if (currentStep < 2) {
+        <button pButton label="Continuar" icon="pi pi-arrow-right" iconPos="right"
+          [disabled]="(currentStep === 0 && stepOneInvalid) || (currentStep === 1 && stepTwoInvalid)"
+          (click)="nextStep()"></button>
+      } @else {
+        <button pButton [label]="editing ? 'Guardar cambios' : 'Registrar gasto'" icon="pi pi-check"
+          [loading]="saving" [disabled]="!canSave" (click)="save()"></button>
+      }
+    </div>
+  </ng-template>
+</p-dialog>
+
+<p-dialog
+  [(visible)]="showReceiptPreview"
+  [header]="receiptPreviewItem ? 'Recibo - ' + receiptPreviewItem.vendor : 'Recibo'"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: 'min(920px, 96vw)' }"
+  [contentStyle]="{ padding: '0' }"
+  styleClass="receipt-preview-dialog"
+  (onHide)="closeReceiptPreview()"
+>
+  @if (receiptPreviewItem) {
+    <div class="receipt-preview">
+      <div class="receipt-preview__meta">
+        <span>{{ receiptPreviewItem.expenseDate | date:'yyyy-MM-dd' }}</span>
+        <strong>{{ receiptPreviewItem.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+      </div>
+
+      @if (isReceiptImage(receiptPreviewItem)) {
+        <img [src]="receiptPreviewItem.receiptUrl" [alt]="'Recibo de ' + receiptPreviewItem.vendor" />
+      } @else {
+        <iframe [src]="receiptPreviewUrl" title="Vista previa del recibo"></iframe>
+      }
+    </div>
+  }
+
+  <ng-template pTemplate="footer">
+    <button pButton label="Cerrar" icon="pi pi-times" [text]="true" severity="secondary" (click)="closeReceiptPreview()"></button>
+  </ng-template>
+</p-dialog>

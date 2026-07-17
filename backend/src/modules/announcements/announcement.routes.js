@@ -66,8 +66,8 @@ router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
 
   const { rows } = await query(
     `INSERT INTO announcements
-       (id, title, body, type, status, send_email, target_all, scheduled_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+       (id, title, body, type, status, send_email, target_all, scheduled_at, created_by, updated_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9) RETURNING *`,
     [
       newId(),
       data.title, data.body, data.type, status,
@@ -82,9 +82,9 @@ router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
   if (!data.targetAll && data.recipientIds?.length) {
     for (const empId of data.recipientIds) {
       await query(
-        `INSERT INTO announcement_recipients (id, announcement_id, employee_id)
-         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [newId(), ann.id, empId]
+        `INSERT INTO announcement_recipients (id, announcement_id, employee_id, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $4) ON CONFLICT DO NOTHING`,
+        [newId(), ann.id, empId, req.user.id]
       );
     }
   }
@@ -125,8 +125,8 @@ router.post('/:id/send', authorize('ADMIN', 'HR'), async (req, res) => {
   }
 
   await query(
-    `UPDATE announcements SET status = 'SENT', sent_at = NOW() WHERE id = $1`,
-    [ann.id]
+    `UPDATE announcements SET status = 'SENT', sent_at = NOW(), updated_by = $1 WHERE id = $2`,
+    [req.user.id, ann.id]
   );
 
   success(res, null, 200, `Comunicado enviado a ${recipients.length} destinatarios`);

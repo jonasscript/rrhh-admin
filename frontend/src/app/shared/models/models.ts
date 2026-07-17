@@ -135,6 +135,41 @@ export interface MoraPaymentRecord {
   notes?: string;
   createdAt: string;
 }
+
+export type CondoOwnerPaymentHistoryMovementType =
+  'ALIQUOT_CHARGE' | 'PAYMENT' | 'DIRECT_MORA_PAYMENT' | 'OVERDUE_BALANCE';
+
+export interface CondoOwnerPaymentHistoryRow {
+  movementType: CondoOwnerPaymentHistoryMovementType;
+  ownerId: string;
+  apartmentNumber: string;
+  ownerName: string;
+  movementDate: string;
+  month?: number | null;
+  year?: number | null;
+  paymentId?: string | null;
+  recordId?: string | null;
+  status?: PaymentStatus | null;
+  chargedAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  amountForPeriod: number;
+  amountForMora: number;
+  moraPaymentAmount: number;
+  notes?: string | null;
+  proofUrl?: string | null;
+}
+
+export interface CondoOwnerPaymentHistoryReport {
+  rows: CondoOwnerPaymentHistoryRow[];
+  summary: {
+    totalCharged: number;
+    totalPaid: number;
+    totalPending: number;
+    totalAppliedToMora: number;
+    currentMora: number;
+  };
+}
 export interface CondoExpensePeriod {
   id: string; month: number; year: number;
   fixed_maintenance: number; fixed_security: number; fixed_cleaning: number; fixed_other: number;
@@ -149,6 +184,16 @@ export interface CondoExpensePeriod {
   created_at: string; updated_at: string;
   total_payments?: number; paid_count?: number; total_collected?: number;
   payments?: AliquotPayment[];
+  provisions?: CondoPeriodProvision[];
+}
+
+export interface CondoPeriodProvision {
+  id: string;
+  provisionId?: string;
+  name: string;
+  amount: number;
+  description?: string;
+  createdAt?: string;
 }
 
 export type PaymentStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE';
@@ -158,6 +203,19 @@ export interface PaymentExtra {
   paymentId: string;
   amount: number;
   notes: string;
+  createdAt: string;
+}
+
+export interface AliquotPaymentRecord {
+  id: string;
+  amount: number;
+  amountForPeriod: number;
+  amountForMora: number;
+  paymentDate: string;
+  proofUrl?: string;
+  proofPublicId?: string;
+  notes?: string;
+  sourceType: 'MANUAL' | 'OCR' | 'PROOF';
   createdAt: string;
 }
 
@@ -178,6 +236,8 @@ export interface AliquotPayment {
     notes?: string;
   }>;
   moraPaymentRecordIds?: string[];
+  paymentRecordId?: string;
+  paymentRecords?: AliquotPaymentRecord[];
   status: PaymentStatus; notes?: string;
   createdAt: string; updatedAt: string;
   owner?: CondoOwner;
@@ -269,6 +329,48 @@ export interface CondoPeriodExpenseItem {
   createdAt: string;
 }
 
+// ── Gastos administrativos reales ────────────────────────────
+export type CondoAdminExpenseType = 'ADMINISTRATIVE' | 'BUILDING_SERVICE' | 'MAINTENANCE' | 'OTHER';
+export type CondoAdminExpenseCategory =
+  'MAINTENANCE' | 'SECURITY' | 'CLEANING' | 'UTILITIES' |
+  'ADMINISTRATION' | 'REPAIR' | 'SUPPLIES' | 'OTHER';
+export type CondoAdminPaymentMethod = 'CASH' | 'TRANSFER' | 'CARD' | 'CHECK' | 'OTHER';
+
+export interface CondoAdminExpense {
+  id: string;
+  expenseDate: string;
+  expenseType: CondoAdminExpenseType;
+  category: CondoAdminExpenseCategory;
+  vendor: string;
+  description: string;
+  amount: number;
+  paymentMethod: CondoAdminPaymentMethod;
+  receiptUrl: string;
+  receiptPublicId: string;
+  notes?: string;
+  registeredBy?: string;
+  registeredByEmail?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CondoAdminExpenseListResponse {
+  items: CondoAdminExpense[];
+  total: number;
+}
+
+export interface CondoAdminExpenseSummary {
+  year: number;
+  month: number;
+  total: number;
+  count: number;
+  administrative: number;
+  building_services: number;
+  maintenance: number;
+  other: number;
+  latest: CondoAdminExpense[];
+}
+
 // ── Fondos de Reserva ────────────────────────────────────────────────
 export type FundEntryType = 'PROVISION' | 'EXPENDITURE' | 'WRITE_OFF' | 'ADJUSTMENT' | 'REVERSAL';
 
@@ -317,6 +419,9 @@ export interface BalancePeriodIngresos {
 export interface BalancePeriodEgresos {
   items: { name: string; category: string; expense_type: string; amount: number }[];
   provisions: { provision_id?: string; name: string; amount: number }[];
+  admin_items?: { id: string; expenseDate: string; expenseType: string; category: string; vendor: string; description: string; amount: number; receiptUrl: string }[];
+  total_admin_expenses?: number;
+  total_operating_expenses?: number;
   total_expenses: number; total_provisions: number; grand_total: number;
 }
 export interface BalancePeriodRow {
@@ -330,6 +435,7 @@ export interface BalancePeriodRow {
 export interface BalanceReport {
   rows: BalancePeriodRow[];
   summary: { total_billed: number; total_collected: number; total_expenses: number;
+             total_admin_expenses?: number; total_operating_expenses?: number;
              total_provisions: number; grand_total: number; net_result: number; };
   funds: Record<string, { name: string; balance: number }>;
 }

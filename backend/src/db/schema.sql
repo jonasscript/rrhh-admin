@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS users (
   password   VARCHAR(255) NOT NULL,
   role       user_role    NOT NULL DEFAULT 'EMPLEADO',
   is_active  BOOLEAN      NOT NULL DEFAULT TRUE,
+  created_by VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+  updated_by VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -79,6 +81,8 @@ CREATE TABLE IF NOT EXISTS departments (
   id          VARCHAR(36)  NOT NULL PRIMARY KEY,
   name        VARCHAR(100) NOT NULL UNIQUE,
   description TEXT,
+  created_by  VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+  updated_by  VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
@@ -115,6 +119,8 @@ CREATE TABLE IF NOT EXISTS employees (
   -- Foto
   photo_url          TEXT,
   photo_public_id    TEXT,
+  created_by         VARCHAR(36)     REFERENCES users(id) ON DELETE SET NULL,
+  updated_by         VARCHAR(36)     REFERENCES users(id) ON DELETE SET NULL,
   created_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ     NOT NULL DEFAULT NOW()
 );
@@ -150,6 +156,8 @@ CREATE TABLE IF NOT EXISTS obligation_catalog (
                   CHECK (payment_mode IN ('MONTHLY', 'LUMP_SUM')),
   payment_month SMALLINT      CHECK (payment_month BETWEEN 1 AND 12),
   payment_day   SMALLINT      CHECK (payment_day BETWEEN 1 AND 31),
+  created_by    VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by    VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -173,6 +181,8 @@ CREATE TABLE IF NOT EXISTS employee_obligations (
                    CHECK (payout_mode IN ('IESS', 'EMPLOYEE', 'MONTHLY')),
   prefer_monthly BOOLEAN       NOT NULL DEFAULT FALSE,
   notes          TEXT,
+  created_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   UNIQUE (employee_id, obligation_id)
@@ -198,6 +208,7 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
   year       SMALLINT      NOT NULL CHECK (year >= 2000),
   status     period_status NOT NULL DEFAULT 'DRAFT',
   created_by VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   UNIQUE (month, year)
@@ -240,6 +251,8 @@ CREATE TABLE IF NOT EXISTS payroll_details (
   net_pay             NUMERIC(10,2) NOT NULL DEFAULT 0,
   -- Notas
   notes               TEXT,
+  created_by          VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by          VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   UNIQUE (period_id, employee_id)
@@ -269,6 +282,8 @@ CREATE TABLE IF NOT EXISTS obligation_payment_records (
   installment_num    SMALLINT      NOT NULL,
   total_installments SMALLINT      NOT NULL DEFAULT 12,
   amount             NUMERIC(10,2) NOT NULL,
+  created_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   UNIQUE (employee_id, obligation_id, payroll_period_id)
 );
@@ -289,6 +304,8 @@ CREATE TABLE IF NOT EXISTS vacation_balances (
   used_days         NUMERIC(5,2) NOT NULL DEFAULT 0,
   accrued_days      NUMERIC(5,2) NOT NULL DEFAULT 0,
   last_accrual_date DATE,
+  created_by        VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+  updated_by        VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
   updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
@@ -307,6 +324,8 @@ CREATE TABLE IF NOT EXISTS vacation_requests (
   reviewed_by    VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
   reviewed_at    TIMESTAMPTZ,
   review_notes   TEXT,
+  created_by     VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
+  updated_by     VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
   created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
@@ -332,18 +351,52 @@ CREATE TABLE IF NOT EXISTS shift_templates (
   end_time   TIME         NOT NULL,
   color      VARCHAR(20)  NOT NULL DEFAULT '#3B82F6',
   is_active  BOOLEAN      NOT NULL DEFAULT TRUE,
+  created_by VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+  updated_by VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- Plantillas base para la rotación de guardias. Los nombres existentes no se
 -- reemplazan, por lo que es seguro ejecutar el schema en instalaciones activas.
-INSERT INTO shift_templates (id, name, start_time, end_time, color)
-VALUES
-  ('system-shift-diurno',     'Diurno',     '06:00', '14:00', '#22C55E'),
-  ('system-shift-vespertino', 'Vespertino', '14:00', '22:00', '#F59E0B'),
-  ('system-shift-nocturno',   'Nocturno',   '22:00', '06:00', '#6366F1'),
-  ('system-shift-descanso',   'Descanso',   '00:00', '00:00', '#64748B')
-ON CONFLICT (name) DO NOTHING;
+DO $$
+BEGIN
+  UPDATE shift_templates
+     SET start_time = '07:00', end_time = '15:00', color = '#22C55E', is_active = TRUE
+   WHERE id = 'system-shift-diurno' OR lower(name) IN ('mañana', 'manana', 'diurno');
+  IF NOT EXISTS (
+    SELECT 1 FROM shift_templates
+     WHERE id = 'system-shift-diurno' OR lower(name) IN ('mañana', 'manana', 'diurno')
+  ) THEN
+    INSERT INTO shift_templates (id, name, start_time, end_time, color)
+    VALUES ('system-shift-diurno', 'Mañana', '07:00', '15:00', '#22C55E');
+  END IF;
+
+  UPDATE shift_templates
+     SET start_time = '15:00', end_time = '21:00', color = '#F59E0B', is_active = TRUE
+   WHERE id = 'system-shift-vespertino' OR lower(name) IN ('tarde', 'vespertino');
+  IF NOT EXISTS (
+    SELECT 1 FROM shift_templates
+     WHERE id = 'system-shift-vespertino' OR lower(name) IN ('tarde', 'vespertino')
+  ) THEN
+    INSERT INTO shift_templates (id, name, start_time, end_time, color)
+    VALUES ('system-shift-vespertino', 'Tarde', '15:00', '21:00', '#F59E0B');
+  END IF;
+
+  UPDATE shift_templates
+     SET start_time = '21:00', end_time = '07:00', color = '#6366F1', is_active = TRUE
+   WHERE id = 'system-shift-nocturno' OR lower(name) IN ('noche', 'nocturno');
+  IF NOT EXISTS (
+    SELECT 1 FROM shift_templates
+     WHERE id = 'system-shift-nocturno' OR lower(name) IN ('noche', 'nocturno')
+  ) THEN
+    INSERT INTO shift_templates (id, name, start_time, end_time, color)
+    VALUES ('system-shift-nocturno', 'Noche', '21:00', '07:00', '#6366F1');
+  END IF;
+
+  INSERT INTO shift_templates (id, name, start_time, end_time, color)
+  VALUES ('system-shift-descanso', 'Descanso', '00:00', '00:00', '#64748B')
+  ON CONFLICT (name) DO NOTHING;
+END $$;
 
 -- ============================================================
 -- ASIGNACIONES DE TURNO
@@ -356,6 +409,7 @@ CREATE TABLE IF NOT EXISTS shift_assignments (
   date              DATE         NOT NULL,
   notes             TEXT,
   created_by        VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
+  updated_by        VARCHAR(36)  REFERENCES users(id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   UNIQUE (employee_id, date)
 );
@@ -378,6 +432,8 @@ CREATE TABLE IF NOT EXISTS loans (
   status           loan_status   NOT NULL DEFAULT 'ACTIVE',
   start_date       DATE          NOT NULL,
   notes            TEXT,
+  created_by       VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by       VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -407,6 +463,7 @@ CREATE TABLE IF NOT EXISTS announcements (
   scheduled_at TIMESTAMPTZ,
   sent_at      TIMESTAMPTZ,
   created_by   VARCHAR(36)         REFERENCES users(id) ON DELETE SET NULL,
+  updated_by   VARCHAR(36)         REFERENCES users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ         NOT NULL DEFAULT NOW()
 );
@@ -416,6 +473,8 @@ CREATE TABLE IF NOT EXISTS announcement_recipients (
   id              VARCHAR(36) NOT NULL PRIMARY KEY,
   announcement_id VARCHAR(36) NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
   employee_id     VARCHAR(36) NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  created_by      VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+  updated_by      VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
   UNIQUE (announcement_id, employee_id)
 );
 
@@ -450,6 +509,8 @@ CREATE TABLE IF NOT EXISTS condo_config (
   bad_debt_pct           NUMERIC(5,2)  NOT NULL DEFAULT 0,    -- % del total de gastos para prov. incobrables
   bad_debt_type          VARCHAR(10)   NOT NULL DEFAULT 'PERCENTAGE'
                            CHECK (bad_debt_type IN ('PERCENTAGE','FIXED')),
+  created_by             VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by             VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at             TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -472,6 +533,8 @@ CREATE TABLE IF NOT EXISTS condo_owners (
   participation_pct NUMERIC(6,4)  NOT NULL DEFAULT 0,   -- ej: 10.5000 = 10.5%
   mora_amount       NUMERIC(10,2) NOT NULL DEFAULT 0,
   is_active         BOOLEAN       NOT NULL DEFAULT TRUE,
+  created_by        VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by        VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -505,6 +568,7 @@ CREATE TABLE IF NOT EXISTS condo_expense_periods (
   generated_at      TIMESTAMPTZ,
   closed_at         TIMESTAMPTZ,
   created_by        VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by        VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   UNIQUE (month, year)
@@ -533,6 +597,8 @@ CREATE TABLE IF NOT EXISTS aliquot_payments (
   proof_uploaded_at TIMESTAMPTZ,
   notes             TEXT,
   registered_by     VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
+  created_by        VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
+  updated_by        VARCHAR(36)    REFERENCES users(id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
   UNIQUE (period_id, owner_id)
@@ -562,6 +628,40 @@ DO $$ BEGIN
     BEFORE UPDATE ON aliquot_payments FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
+-- Detalle histórico de cada abono/comprobante registrado sobre una cabecera
+-- de alícuota. La cabecera conserva el acumulado; esta tabla conserva la
+-- trazabilidad de pagos parciales y sus comprobantes.
+CREATE TABLE IF NOT EXISTS aliquot_payment_records (
+  id                 VARCHAR(36)   NOT NULL PRIMARY KEY,
+  payment_id         VARCHAR(36)   NOT NULL,
+  owner_id           VARCHAR(36)   NOT NULL,
+  period_id          VARCHAR(36)   NOT NULL,
+  amount             NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  amount_for_period  NUMERIC(10,2) NOT NULL DEFAULT 0,
+  amount_for_mora    NUMERIC(10,2) NOT NULL DEFAULT 0,
+  payment_date       DATE          NOT NULL,
+  proof_url          TEXT,
+  proof_public_id    TEXT,
+  notes              TEXT,
+  source_type        VARCHAR(20)   NOT NULL DEFAULT 'MANUAL'
+                       CHECK (source_type IN ('MANUAL','OCR','PROOF')),
+  registered_by      VARCHAR(36),
+  created_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payment_records_payment
+    ON aliquot_payment_records(payment_id, payment_date DESC, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payment_records_owner
+    ON aliquot_payment_records(owner_id, payment_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payment_records_period
+    ON aliquot_payment_records(period_id);
+  CREATE INDEX IF NOT EXISTS idx_aliquot_payment_records_proof
+    ON aliquot_payment_records(proof_public_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
 -- ============================================================
 -- CONDOMINIO — HISTORIAL DE ABONOS A MORA
 -- ============================================================
@@ -583,6 +683,8 @@ CREATE TABLE IF NOT EXISTS mora_payment_records (
   proof_public_id    TEXT,
   notes              TEXT,
   registered_by      VARCHAR(36),
+  created_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by         VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
@@ -606,6 +708,7 @@ CREATE TABLE IF NOT EXISTS aliquot_payment_extras (
   amount      NUMERIC(10,2) NOT NULL CHECK (amount > 0),
   notes       TEXT          NOT NULL DEFAULT '',
   created_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -634,6 +737,8 @@ CREATE TABLE IF NOT EXISTS condo_expense_items (
   is_active     BOOLEAN       NOT NULL DEFAULT TRUE,
   is_recurring  BOOLEAN       NOT NULL DEFAULT TRUE,
   display_order INT           NOT NULL DEFAULT 0,
+  created_by    VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by    VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -653,11 +758,59 @@ CREATE TABLE IF NOT EXISTS condo_period_expense_items (
   expense_type    VARCHAR(10)   NOT NULL CHECK (expense_type IN ('FIXED','VARIABLE')),
   amount          NUMERIC(10,2) NOT NULL,
   notes           TEXT,
+  created_by      VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by      VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
 DO $$ BEGIN
   CREATE INDEX IF NOT EXISTS idx_condo_period_expense_items_period ON condo_period_expense_items(period_id);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
+-- CONDOMINIO — GASTOS ADMINISTRATIVOS REALES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS condo_admin_expenses (
+  id               VARCHAR(36)   NOT NULL PRIMARY KEY,
+  expense_date     DATE          NOT NULL,
+  expense_type     VARCHAR(20)   NOT NULL DEFAULT 'ADMINISTRATIVE'
+                     CHECK (expense_type IN ('ADMINISTRATIVE','BUILDING_SERVICE','MAINTENANCE','OTHER')),
+  category         VARCHAR(50)   NOT NULL DEFAULT 'ADMINISTRATION'
+                     CHECK (category IN ('MAINTENANCE','SECURITY','CLEANING','UTILITIES','ADMINISTRATION','REPAIR','SUPPLIES','OTHER')),
+  vendor           VARCHAR(180)  NOT NULL,
+  description      TEXT          NOT NULL,
+  amount           NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  payment_method   VARCHAR(30)   NOT NULL DEFAULT 'TRANSFER'
+                     CHECK (payment_method IN ('CASH','TRANSFER','CARD','CHECK','OTHER')),
+  receipt_url      TEXT          NOT NULL,
+  receipt_public_id TEXT         NOT NULL,
+  notes            TEXT,
+  registered_by    VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_by       VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by       VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_condo_admin_expenses_updated_at
+    BEFORE UPDATE ON condo_admin_expenses FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_admin_expenses_date
+    ON condo_admin_expenses(expense_date DESC);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_admin_expenses_type
+    ON condo_admin_expenses(expense_type);
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_condo_admin_expenses_category
+    ON condo_admin_expenses(category);
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================================
@@ -673,6 +826,8 @@ CREATE TABLE IF NOT EXISTS provision_catalog (
   value        NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (value >= 0),
   is_active    BOOLEAN       NOT NULL DEFAULT TRUE,
   sort_order   SMALLINT      NOT NULL DEFAULT 0,
+  created_by   VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by   VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -706,6 +861,8 @@ CREATE TABLE IF NOT EXISTS condo_fund_entries (
   description    TEXT          NOT NULL,
   entry_date     DATE          NOT NULL DEFAULT CURRENT_DATE,
   registered_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  created_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+  updated_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
   created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
@@ -720,6 +877,58 @@ EXCEPTION WHEN OTHERS THEN NULL; END $$;
 DO $$ BEGIN
   CREATE INDEX IF NOT EXISTS idx_condo_fund_entries_entry_date ON condo_fund_entries(entry_date DESC);
 EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+-- ============================================================
+-- AUDITORÍA DE CREACIÓN / EDICIÓN
+-- ============================================================
+
+DO $$
+DECLARE
+  audit_table TEXT;
+BEGIN
+  FOREACH audit_table IN ARRAY ARRAY[
+    'users',
+    'departments',
+    'employees',
+    'obligation_catalog',
+    'employee_obligations',
+    'payroll_periods',
+    'payroll_details',
+    'obligation_payment_records',
+    'vacation_balances',
+    'vacation_requests',
+    'shift_templates',
+    'shift_assignments',
+    'loans',
+    'announcements',
+    'announcement_recipients',
+    'condo_config',
+    'condo_owners',
+    'condo_expense_periods',
+    'aliquot_payments',
+    'aliquot_payment_records',
+    'mora_payment_records',
+    'aliquot_payment_extras',
+    'condo_expense_items',
+    'condo_period_expense_items',
+    'condo_admin_expenses',
+    'provision_catalog',
+    'condo_fund_entries'
+  ]
+  LOOP
+    BEGIN
+      EXECUTE format(
+        'ALTER TABLE %I ADD COLUMN IF NOT EXISTS created_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL',
+        audit_table
+      );
+      EXECUTE format(
+        'ALTER TABLE %I ADD COLUMN IF NOT EXISTS updated_by VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL',
+        audit_table
+      );
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- MIGRACIONES INCREMENTALES (idempotentes)
@@ -883,6 +1092,8 @@ BEGIN
       description    TEXT          NOT NULL,
       entry_date     DATE          NOT NULL DEFAULT CURRENT_DATE,
       registered_by  VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+      created_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+      updated_by     VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
       created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
     );
   END IF;
@@ -1033,6 +1244,8 @@ DO $$ BEGIN
     value        NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (value >= 0),
     is_active    BOOLEAN       NOT NULL DEFAULT TRUE,
     sort_order   SMALLINT      NOT NULL DEFAULT 0,
+    created_by   VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
+    updated_by   VARCHAR(36)   REFERENCES users(id) ON DELETE SET NULL,
     created_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW()
   );

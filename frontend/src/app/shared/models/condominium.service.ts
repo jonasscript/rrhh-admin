@@ -2,8 +2,10 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import {
-  AliquotPayment, BalanceReport, CondoConfig, CondoExpenseItem, CondoExpenseItemsResponse,
-  CondoExpensePeriod, CondoFundEntry, CondoFundSummary, CondoOwner, CondoPeriodExpenseItem,
+  AliquotPayment, BalanceReport, CondoAdminExpense, CondoAdminExpenseListResponse, CondoAdminExpenseSummary,
+  CondoAdminExpenseCategory, CondoAdminExpenseType, CondoAdminPaymentMethod,
+  CondoConfig, CondoExpenseItem, CondoExpenseItemsResponse,
+  CondoExpensePeriod, CondoFundEntry, CondoFundSummary, CondoOwner, CondoOwnerPaymentHistoryReport, CondoPeriodExpenseItem,
   MovementImportResult, OcrScanResult, PaymentExtra, ProvisionCatalogItem,
 } from '../models/models';
 
@@ -21,6 +23,47 @@ export class CondominiumService extends ApiService {
   toggleExpenseItem(id: string): Observable<CondoExpenseItem> { return this.patch(`/condominium/expense-items/${id}/toggle`, {}); }
   deleteExpenseItem(id: string): Observable<void> { return this.delete(`/condominium/expense-items/${id}`); }
 
+  // Real administrative expenses
+  getAdminExpenses(filters?: {
+    year?: number; month?: number; date_from?: string; date_to?: string;
+    type?: CondoAdminExpenseType; category?: CondoAdminExpenseCategory; limit?: number;
+  }): Observable<CondoAdminExpenseListResponse> {
+    return this.get('/condominium/admin-expenses', filters);
+  }
+  getAdminExpenseSummary(filters?: { year?: number; month?: number }): Observable<CondoAdminExpenseSummary> {
+    return this.get('/condominium/admin-expenses/summary', filters);
+  }
+  createAdminExpense(data: {
+    expenseDate: string;
+    expenseType: CondoAdminExpenseType;
+    category: CondoAdminExpenseCategory;
+    vendor: string;
+    description: string;
+    amount: number;
+    paymentMethod: CondoAdminPaymentMethod;
+    notes?: string;
+  }, receipt: File): Observable<CondoAdminExpense> {
+    const formData = new FormData();
+    formData.append('file', receipt);
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) formData.append(key, String(value));
+    });
+    return this.postFormData('/condominium/admin-expenses', formData);
+  }
+  updateAdminExpense(id: string, data: Partial<{
+    expenseDate: string;
+    expenseType: CondoAdminExpenseType;
+    category: CondoAdminExpenseCategory;
+    vendor: string;
+    description: string;
+    amount: number;
+    paymentMethod: CondoAdminPaymentMethod;
+    notes: string;
+  }>): Observable<CondoAdminExpense> {
+    return this.patch(`/condominium/admin-expenses/${id}`, data);
+  }
+  deleteAdminExpense(id: string): Observable<void> { return this.delete(`/condominium/admin-expenses/${id}`); }
+
   // Owners
   getOwners(activeOnly = false): Observable<{ owners: CondoOwner[]; totalParticipationPct: number }> {
     return this.get('/condominium/owners', { activeOnly });
@@ -35,6 +78,11 @@ export class CondominiumService extends ApiService {
   toggleOwner(id: string): Observable<CondoOwner> { return this.patch(`/condominium/owners/${id}/toggle`, {}); }
   adjustMora(id: string, amount: number, operation: 'ADD' | 'SUBTRACT' | 'SET', notes?: string): Observable<CondoOwner> {
     return this.patch(`/condominium/owners/${id}/mora`, { amount, operation, notes });
+  }
+  getOwnerPaymentHistoryReport(filters?: {
+    ownerId?: string; dateFrom?: string; dateTo?: string;
+  }): Observable<CondoOwnerPaymentHistoryReport> {
+    return this.get('/condominium/owners/payment-history', filters);
   }
 
   // Periods
@@ -73,10 +121,11 @@ export class CondominiumService extends ApiService {
     });
   }
 
-  uploadProof(paymentId: string, file: File, moraPaymentRecordIds?: string[]): Observable<AliquotPayment> {
+  uploadProof(paymentId: string, file: File, moraPaymentRecordIds?: string[], paymentRecordId?: string): Observable<AliquotPayment> {
     const formData = new FormData();
     formData.append('file', file);
     if (moraPaymentRecordIds?.length) formData.append('moraPaymentRecordIds', JSON.stringify(moraPaymentRecordIds));
+    if (paymentRecordId) formData.append('paymentRecordId', paymentRecordId);
     return this.postFormData(`/condominium/payments/${paymentId}/proof`, formData);
   }
 

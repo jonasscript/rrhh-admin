@@ -7,6 +7,8 @@
       <p class="page-subtitle">Rotación diaria de mañana, tarde, noche y descanso.</p>
     </div>
     <div class="header-actions">
+      <p-button label="Vacaciones" icon="pi pi-sun" severity="warning" [outlined]="true"
+        (onClick)="openVacationDialog()" />
       <p-button label="Asignar manualmente" icon="pi pi-pencil" severity="secondary" [outlined]="true"
         (onClick)="openManualAssignment()" />
       <p-button label="Generar rotación" icon="pi pi-sync" (onClick)="openGenerateDialog()" />
@@ -18,7 +20,7 @@
   <div class="month-toolbar">
     <div class="month-navigation">
       <p-button icon="pi pi-chevron-left" [text]="true" ariaLabel="Mes anterior" (onClick)="prevMonth()" />
-      <h2>{{ currentMonth() | date:'MMMM yyyy' }}</h2>
+      <h2>{{ monthTitle(currentMonth()) }}</h2>
       <p-button icon="pi pi-chevron-right" [text]="true" ariaLabel="Mes siguiente" (onClick)="nextMonth()" />
       <p-button label="Mes actual" severity="secondary" [text]="true" (onClick)="goToday()" />
     </div>
@@ -46,7 +48,14 @@
                   <th class="role-column">Turno</th>
                   @for (day of week; track $index) {
                     <th [class.outside-month]="!day" [class.today]="day && isToday(day)">
-                      @if (day) { {{ day | date:'EEE d' }} }
+                      @if (day) {
+                        <span>{{ dayTitle(day) }}</span>
+                        @if (vacationsForDay(day).length) {
+                          <span class="vacation-day-mark" [pTooltip]="vacationTooltip(day)" tooltipPosition="top">
+                            <i class="pi pi-sun"></i> {{ vacationsForDay(day).length }}
+                          </span>
+                        }
+                      }
                     </th>
                   }
                 </tr>
@@ -63,10 +72,13 @@
                       <td [class.outside-month]="!day" [class.today]="day && isToday(day)">
                         @if (day; as activeDay) {
                           @if (getRoleAssignment(activeDay, role); as assignment) {
-                            <button type="button" class="schedule-cell assigned" [style.--shift-color]="role.color"
+                            <button type="button" class="schedule-cell assigned" [class.vacation-conflict]="isEmployeeOnVacation(assignment.employee_id, activeDay)" [style.--shift-color]="role.color"
                               (click)="openManualAssignment(activeDay, role)">
                               <strong>{{ employeeName(assignment) }}</strong>
-                              @if (role.key !== 'rest') { <small>{{ shortTime(assignment.start_time) }} – {{ shortTime(assignment.end_time) }}</small> }
+                              @if (isEmployeeOnVacation(assignment.employee_id, activeDay)) {
+                                <span class="vacation-conflict-label"><i class="pi pi-sun"></i> Vacaciones</span>
+                              }
+                              <small>{{ role.schedule }}</small>
                             </button>
                           } @else {
                             <button type="button" class="schedule-cell" [style.--shift-color]="role.color"
@@ -92,7 +104,7 @@
   [draggable]="false" [style]="{ width: 'min(540px, 96vw)' }">
   <div class="dialog-intro">
     <i class="pi pi-sync"></i>
-    <span>Se generará el horario de {{ currentMonth() | date:'MMMM yyyy' }} con cobertura continua de las 24 horas. La rotación Mañana → Tarde → Noche → Descanso maximiza el tiempo de descanso entre turnos. Las plantillas se crearán o reutilizarán automáticamente.</span>
+    <span>Se generará el horario de {{ monthTitle(currentMonth()) }} con cuatro guardias. Cada día se cubren Mañana → Tarde → Noche → Descanso; quien sale de Noche descansa al día siguiente.</span>
   </div>
   <div class="form-grid">
     <div class="field field-full">
@@ -100,7 +112,7 @@
       <p-multiSelect [(ngModel)]="generation.employeeIds" [options]="guards()" optionLabel="label" optionValue="value"
         placeholder="Selecciona los cuatro guardias" [filter]="true" [maxSelectedLabels]="1"
         selectedItemsLabel="{0} guardias seleccionados" appendTo="body" styleClass="w-full" />
-      <small>El primer guardia inicia en Mañana; los siguientes en Tarde, Noche y Descanso.</small>
+      <small>El primer guardia inicia en Mañana; los siguientes en Tarde, Noche y descanso.</small>
     </div>
     <div class="field field-full replace-option">
       <p-checkbox [(ngModel)]="generation.overwrite" [binary]="true" inputId="overwrite" />
@@ -118,7 +130,8 @@
   <div class="manual-form">
     <div class="field">
       <label>Fecha *</label>
-      <p-calendar [(ngModel)]="manual.date" dateFormat="dd/mm/yy" [showIcon]="true" styleClass="w-full" />
+      <p-calendar [(ngModel)]="manual.date" dateFormat="dd/mm/yy" [locale]="calendarLocale" [firstDayOfWeek]="1" [showIcon]="true" styleClass="w-full"
+        (onSelect)="onManualDateChanged()" />
     </div>
     <div class="field">
       <label>Turno *</label>
@@ -127,10 +140,10 @@
     </div>
     <div class="field">
       <label>Guardia *</label>
-      <p-dropdown [(ngModel)]="manual.employeeId" [options]="guards()" optionLabel="label" optionValue="value"
+      <p-dropdown [(ngModel)]="manual.employeeId" [options]="availableGuardsForManual()" optionLabel="label" optionValue="value"
         placeholder="Seleccionar guardia" [filter]="true" styleClass="w-full" />
     </div>
-    <p class="manual-help">Puedes corregir cualquier celda del horario. Un guardia solo puede tener un turno por día.</p>
+    <p class="manual-help">Puedes corregir cualquier celda del horario. Un guardia en vacaciones no aparece disponible para esa fecha.</p>
   </div>
   <ng-template pTemplate="footer">
     @if (manual.assignmentId) {
@@ -138,5 +151,60 @@
     }
     <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showManualDialog = false" />
     <p-button label="Guardar turno" icon="pi pi-check" [loading]="saving()" (onClick)="saveManualAssignment()" />
+  </ng-template>
+</p-dialog>
+
+<p-dialog header="Asignar vacaciones" [(visible)]="showVacationDialog"
+  [modal]="true" [draggable]="false" [style]="{ width: 'min(500px, 96vw)' }">
+  <div class="dialog-intro vacation-intro">
+    <i class="pi pi-sun"></i>
+    <span>Registra vacaciones por un día o por un rango. Si el guardia ya tiene turnos en esas fechas, puedes reorganizar solo esos días.</span>
+  </div>
+  <div class="manual-form">
+    <div class="field">
+      <label>Guardia *</label>
+      <p-dropdown [(ngModel)]="vacationForm.employeeId" [options]="guards()" optionLabel="label" optionValue="value"
+        placeholder="Seleccionar guardia" [filter]="true" styleClass="w-full" appendTo="body" />
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Desde *</label>
+        <p-calendar [(ngModel)]="vacationForm.startDate" dateFormat="dd/mm/yy" [locale]="calendarLocale" [firstDayOfWeek]="1" [showIcon]="true" styleClass="w-full" appendTo="body" />
+      </div>
+      <div class="field">
+        <label>Días calendario *</label>
+        <p-inputNumber [(ngModel)]="vacationForm.daysRequested" [min]="1" [max]="60" [showButtons]="true"
+          inputStyleClass="w-full text-right" styleClass="w-full" />
+      </div>
+    </div>
+    @if (vacationEndDate(); as endDate) {
+      <div class="vacation-range-preview">
+        <span>Último día de vacaciones: <strong>{{ endDate | date:'dd/MM/yyyy' }}</strong></span>
+        @if (vacationReturnDate(); as returnDate) {
+          <span>Retorno al trabajo: <strong>{{ returnDate | date:'dd/MM/yyyy' }}</strong></span>
+        }
+      </div>
+    }
+    <div class="field">
+      <label>Motivo</label>
+      <input pInputText [(ngModel)]="vacationForm.reason" placeholder="Opcional" />
+    </div>
+    <div class="field field-full replace-option">
+      <p-checkbox [(ngModel)]="vacationForm.reorganize" [binary]="true" inputId="reorganizeVacation" />
+      <label for="reorganizeVacation">Reorganizar solo los turnos del guardia durante sus vacaciones</label>
+    </div>
+    @if (vacationForm.reorganize) {
+      <div class="field">
+        <label>Guardia reemplazo *</label>
+        <p-dropdown [(ngModel)]="vacationForm.replacementEmployeeId" [options]="replacementGuardOptions()"
+          optionLabel="label" optionValue="value" placeholder="Seleccionar reemplazo" [filter]="true"
+          styleClass="w-full" appendTo="body" />
+      </div>
+    }
+    <p class="manual-help">La reorganización reemplaza únicamente las asignaciones del guardia en el rango seleccionado usando el reemplazo elegido. Si el reemplazo ya tiene un turno operativo o vacaciones en una fecha afectada, el sistema no guardará el cambio.</p>
+  </div>
+  <ng-template pTemplate="footer">
+    <p-button label="Cancelar" severity="secondary" [text]="true" (onClick)="showVacationDialog = false" />
+    <p-button label="Guardar vacaciones" icon="pi pi-check" [loading]="saving()" (onClick)="saveVacation()" />
   </ng-template>
 </p-dialog>

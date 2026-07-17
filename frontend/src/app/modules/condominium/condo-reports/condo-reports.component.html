@@ -53,7 +53,7 @@
       <p-card styleClass="summ-card summ-card--billed">
         <div class="summ-content">
           <span class="summ-icon"><i class="pi pi-file-edit"></i></span>
-          <span class="summ-label">Ingresos</span>
+          <span class="summ-label">Alícuotas generadas</span>
           <span class="summ-value">{{ report.summary.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
           <small>Total emitido en alícuotas</small>
         </div>
@@ -63,15 +63,15 @@
           <span class="summ-icon"><i class="pi pi-wallet"></i></span>
           <span class="summ-label">Ingresos cobrados</span>
           <span class="summ-value">{{ report.summary.total_collected | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
-          <small>{{ collectionRate }}% del total facturado</small>
+          <small>{{ collectionRate }}% de alícuotas generadas</small>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--savings">
         <div class="summ-content">
           <span class="summ-icon"><i class="pi pi-building-columns"></i></span>
-          <span class="summ-label">Provisionado ahorrado</span>
-          <span class="summ-value">{{ totalProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
-          <small>Total reservado en fondos</small>
+          <span class="summ-label">Ahorro real provisionado</span>
+          <span class="summ-value">{{ totalActualProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>Después de cubrir gastos</small>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--expenses">
@@ -80,6 +80,14 @@
           <span class="summ-label">Gastos reales</span>
           <span class="summ-value">{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
           <small>{{ expenseCoverageRate }}% de lo cobrado</small>
+        </div>
+      </p-card>
+      <p-card styleClass="summ-card summ-card--admin">
+        <div class="summ-content">
+          <span class="summ-icon"><i class="pi pi-briefcase"></i></span>
+          <span class="summ-label">Gastos administrativos</span>
+          <span class="summ-value">{{ totalAdministrativeExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
+          <small>Compras, servicios y mantenimientos eventuales</small>
         </div>
       </p-card>
       <p-card styleClass="summ-card summ-card--receivable">
@@ -111,7 +119,7 @@
 
         <div class="statement-group">
           <div class="statement-row">
-            <span>Ingresos</span>
+            <span>Alícuotas generadas</span>
             <strong>{{ report.summary.total_billed | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </div>
           <div class="statement-row">
@@ -127,15 +135,32 @@
         <div class="statement-group">
           <div class="statement-row">
             <span>Gastos operativos</span>
-            <strong>{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+            <strong>{{ report.summary.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </div>
           <div class="statement-row">
-            <span>Total provisionado (ahorrado)</span>
-            <strong>{{ totalProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+            <span>Gastos administrativos</span>
+            <strong>{{ totalAdministrativeExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </div>
           <div class="statement-row statement-total">
             <span>Total gastos reales</span>
             <strong>{{ totalOperatingExpenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+        </div>
+
+        <div class="statement-group">
+          <div class="statement-row">
+            <span>Provisión esperada del período</span>
+            <strong>{{ totalExpectedProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row">
+            <span>Ahorro real después de gastos</span>
+            <strong class="text-green-600">{{ totalActualProvisionedSavings | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+          <div class="statement-row">
+            <span>Provisión pendiente por cubrir</span>
+            <strong [ngClass]="totalProvisionSavingsPending > 0 ? 'text-red-500' : 'text-color-secondary'">
+              {{ totalProvisionSavingsPending | currency:'USD':'symbol-narrow':'1.2-2' }}
+            </strong>
           </div>
         </div>
 
@@ -144,12 +169,6 @@
             <span>Resultado de caja</span>
             <strong [ngClass]="operatingNetResult >= 0 ? 'text-green-600' : 'text-red-500'">
               {{ sign(operatingNetResult) }}{{ operatingNetResult | currency:'USD':'symbol-narrow':'1.2-2' }}
-            </strong>
-          </div>
-          <div class="statement-row">
-            <span>Resultado devengado</span>
-            <strong [ngClass]="accrualResult >= 0 ? 'text-green-600' : 'text-red-500'">
-              {{ sign(accrualResult) }}{{ accrualResult | currency:'USD':'symbol-narrow':'1.2-2' }}
             </strong>
           </div>
         </div>
@@ -197,12 +216,12 @@
         <tr>
           <th style="width:42px"></th>
           <th>Período</th>
-          <th class="text-right">Facturado</th>
+          <th class="text-right">Alícuotas generadas</th>
           <th class="text-right">Cobrado</th>
           <th class="text-right">Por cobrar</th>
           <th class="text-center" style="width:70px">%</th>
           <th class="text-right">Gastos reales</th>
-          <th class="text-right">Provisionado</th>
+          <th class="text-right">Ahorro real</th>
           <th class="text-right">Flujo caja</th>
           <th class="text-right">Acumulado</th>
         </tr>
@@ -224,8 +243,8 @@
             <p-tag [value]="pctCollected(row) + '%'"
               [severity]="pctCollected(row) >= 90 ? 'success' : pctCollected(row) >= 60 ? 'warning' : 'danger'" />
           </td>
-          <td class="text-right">{{ row.egresos.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
-          <td class="text-right text-color-secondary">{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right">{{ periodOperatingExpenses(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+          <td class="text-right text-color-secondary">{{ periodActualProvisionedSavings(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
           <td class="text-right" [ngClass]="periodCashResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
             <strong>{{ sign(periodCashResult(row)) }}{{ periodCashResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
           </td>
@@ -239,20 +258,14 @@
             <td colspan="10">
               <div class="period-summary">
                 <div>
-                  <span>Resultado devengado</span>
-                  <strong [ngClass]="periodAccrualResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
-                    {{ sign(periodAccrualResult(row)) }}{{ periodAccrualResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
-                  </strong>
-                </div>
-                <div>
                   <span>Flujo de caja operativo</span>
                   <strong [ngClass]="periodCashResult(row) >= 0 ? 'text-green-600' : 'text-red-500'">
                     {{ sign(periodCashResult(row)) }}{{ periodCashResult(row) | currency:'USD':'symbol-narrow':'1.2-2' }}
                   </strong>
                 </div>
                 <div>
-                  <span>Provisionado (ahorrado)</span>
-                  <strong>{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                  <span>Ahorro real provisionado</span>
+                  <strong>{{ periodActualProvisionedSavings(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
                 </div>
               </div>
 
@@ -287,10 +300,44 @@
                 </div>
 
                 <div class="detail-section">
-                  <h4 class="detail-title">Detalle de provisiones ahorradas</h4>
+                  <h4 class="detail-title">Gastos administrativos reales</h4>
+                  @if (row.egresos.admin_items?.length) {
+                    <table class="detail-table">
+                      <thead><tr><th>Detalle</th><th>Proveedor</th><th class="text-right">Monto</th></tr></thead>
+                      <tbody>
+                        @for (item of row.egresos.admin_items; track item.id) {
+                          <tr>
+                            <td>
+                              {{ item.description }}
+                              @if (item.receiptUrl) {
+                                <a class="receipt-inline" [href]="item.receiptUrl" target="_blank" rel="noopener">Recibo</a>
+                              }
+                            </td>
+                            <td><small class="text-color-secondary">{{ item.vendor }}</small></td>
+                            <td class="text-right">{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colspan="2"><strong>Total gastos administrativos</strong></td>
+                          <td class="text-right"><strong>{{ row.egresos.total_admin_expenses || 0 | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  } @else {
+                    <p class="empty-detail">
+                      Sin gastos administrativos registrados.
+                      <strong>Total gastos administrativos: {{ row.egresos.total_admin_expenses || 0 | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                    </p>
+                  }
+                </div>
+
+                <div class="detail-section">
+                  <h4 class="detail-title">Provisión esperada y ahorro real</h4>
                   @if (row.egresos.provisions?.length) {
                     <table class="detail-table">
-                      <thead><tr><th>Provisión</th><th class="text-right">Monto</th></tr></thead>
+                      <thead><tr><th>Provisión</th><th class="text-right">Meta del período</th></tr></thead>
                       <tbody>
                         @for (provision of row.egresos.provisions; track provision.provision_id || provision.name) {
                           <tr>
@@ -301,15 +348,24 @@
                       </tbody>
                       <tfoot>
                         <tr>
-                          <td><strong>Total provisionado</strong></td>
+                          <td><strong>Meta total de provisión</strong></td>
                           <td class="text-right"><strong>{{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                        </tr>
+                        <tr>
+                          <td><strong>Ahorro real después de gastos</strong></td>
+                          <td class="text-right"><strong>{{ periodActualProvisionedSavings(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                        </tr>
+                        <tr>
+                          <td><strong>Pendiente de ahorro por cubrir</strong></td>
+                          <td class="text-right"><strong>{{ periodProvisionSavingsPending(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
                         </tr>
                       </tfoot>
                     </table>
                   } @else {
                     <p class="empty-detail">
                       Sin provisiones registradas.
-                      <strong>Total provisionado: {{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                      <strong>Meta total de provisión: {{ row.egresos.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                      <strong>Ahorro real: {{ periodActualProvisionedSavings(row) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
                     </p>
                   }
                 </div>

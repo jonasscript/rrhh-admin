@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, ElementRef, inject, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -17,11 +17,21 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { FileUploadModule } from 'primeng/fileupload';
 import { ImageModule } from 'primeng/image';
 import { InputTextareaModule } from 'primeng/inputtextarea';
-import { MessageService, ConfirmationService } from 'primeng/api';
+import { DropdownModule } from 'primeng/dropdown';
+import { MenuModule } from 'primeng/menu';
+import { MessageService, ConfirmationService, MenuItem } from 'primeng/api';
 import { CondominiumService } from '../../../shared/models/condominium.service';
-import { AliquotPayment, CondoExpensePeriod, CondoPeriodExpenseItem, OcrOwnerMatch, OcrScanResult, PaymentExtra, PaymentStatus } from '../../../shared/models/models';
+import { AliquotPayment, AliquotPaymentRecord, CondoExpensePeriod, CondoPeriodExpenseItem, OcrOwnerMatch, OcrScanResult, PaymentExtra, PaymentStatus } from '../../../shared/models/models';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  MAINTENANCE: 'Mantenimiento',
+  SECURITY: 'Seguridad',
+  CLEANING: 'Limpieza',
+  UTILITIES: 'Servicios básicos',
+  ADMINISTRATION: 'Administración',
+  OTHER: 'Otros',
+};
 type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | 'danger' | undefined;
 type BulkReceiptStatus = 'queued' | 'scanning' | 'ready' | 'error' | 'confirming' | 'confirmed';
 type BulkReceiptSource = 'receipt' | 'movement-pdf' | 'movement-row';
@@ -47,18 +57,28 @@ interface BulkReceipt {
   movementProofPublicId?: string;
 }
 
+interface AliquotPreviewRow {
+  ownerId: string;
+  apartmentNumber: string;
+  fullName: string;
+  participationPct: number;
+  amount: number;
+}
+
 @Component({
   selector: 'app-condo-period-detail',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule,
     TableModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule,
     CalendarModule, TagModule, TooltipModule, ToastModule, ConfirmDialogModule,
-    FileUploadModule, ImageModule, InputTextareaModule],
+    FileUploadModule, ImageModule, InputTextareaModule, DropdownModule, MenuModule],
   providers: [MessageService, ConfirmationService],
   templateUrl: './condo-period-detail.component.html',
   styleUrl: './condo-period-detail.component.css',
 })
-export class CondoPeriodDetailComponent implements OnInit {
+export class CondoPeriodDetailComponent implements OnInit, OnDestroy {
+  @ViewChild('movementPdfInput') movementPdfInput?: ElementRef<HTMLInputElement>;
+
   private route = inject(ActivatedRoute);
   private svc = inject(CondominiumService);
   private fb = inject(FormBuilder);
@@ -76,12 +96,19 @@ export class CondoPeriodDetailComponent implements OnInit {
   showExtraDialog   = false;
   showBulkUpload    = false;
   showProofPreview  = false;
+  showPeriodDetails = false;
+  showAliquotPreview = false;
+  showAliquotPreviewDetails = false;
   showMoraProofsDialog = false;
+  showPaymentRecordsDialog = false;
   selectedPayment: AliquotPayment | null = null;
   selectedMoraProofPayment: AliquotPayment | null = null;
+  selectedPaymentRecordsPayment: AliquotPayment | null = null;
   selectedFile: File | null = null;
   proofPreviewUrl = '';
   proofPreviewResource: SafeResourceUrl | null = null;
+  proofPreviewIsPdf = false;
+  private proofPreviewObjectUrl: string | null = null;
   bulkProcessing = false;
   importingMovements = false;
   showMovementLoading = false;
@@ -89,6 +116,10 @@ export class CondoPeriodDetailComponent implements OnInit {
   movementPdfFile: File | null = null;
   manualPeriods: CondoExpensePeriod[] = [];
   loadingManualPeriods = false;
+  loadingAliquotPreview = false;
+  aliquotPreviewRows: AliquotPreviewRow[] = [];
+  aliquotPreviewBase = 0;
+  aliquotPreviewParticipation = 0;
 
   // ── Extras ─────────────────────────────────────────────
   savingExtra   = false;
@@ -132,6 +163,10 @@ export class CondoPeriodDetailComponent implements OnInit {
     return Math.max(0, payment.totalDue - payment.amountPaid);
   }
 
+  isOverduePaymentSettled(payment: AliquotPayment): boolean {
+    return !!payment.wasOverdue && this.periodPending(payment) <= 0.01;
+  }
+
   get enteredPaymentAmount(): number {
     return Number(this.paymentForm.controls.amountPaid.value || 0);
   }
@@ -148,7 +183,83 @@ export class CondoPeriodDetailComponent implements OnInit {
     return Math.max(0, this.ownerMoraAvailable - this.moraToApply);
   }
 
+  get isSelectedPeriodClosed(): boolean {
+    return this.period?.status === 'CLOSED';
+  }
+
+  get canManageExtras(): boolean {
+    return this.period?.status !== 'CLOSED' && this.selectedPayment?.status !== 'PAID';
+  }
+
+  canManagePaymentExtras(payment: AliquotPayment): boolean {
+    return this.period?.status !== 'CLOSED' && payment.status !== 'PAID';
+  }
+
+  get periodProvisions() {
+    return this.period?.provisions || [];
+  }
+
+  get canConfirmAliquotPreview(): boolean {
+    return this.aliquotPreviewRows.length > 0 &&
+      !this.hasInvalidAliquotPreviewParticipation &&
+      !this.generating;
+  }
+
+  get hasInvalidAliquotPreviewParticipation(): boolean {
+    return Math.abs(this.aliquotPreviewParticipation - 100) > 0.01;
+  }
+
+  get canManagePeriodPayments(): boolean {
+    return !!this.period?.payments?.length && this.period.status !== 'CLOSED';
+  }
+
+  get headerActionItems(): MenuItem[] {
+    const actions: MenuItem[] = [
+      {
+        label: 'Ver detalles',
+        icon: 'pi pi-info-circle',
+        styleClass: 'period-action-detail',
+        command: () => this.showPeriodDetails = true,
+      },
+    ];
+
+    if (this.canManagePeriodPayments) {
+      actions.push(
+        {
+          label: 'Importar movimientos PDF',
+          icon: this.importingMovements ? 'pi pi-spin pi-spinner' : 'pi pi-file-pdf',
+          styleClass: 'period-action-pdf',
+          disabled: this.importingMovements,
+          command: () => this.openMovementPdfPicker(),
+        },
+        {
+          label: 'Enviar correos',
+          icon: this.sending ? 'pi pi-spin pi-spinner' : 'pi pi-send',
+          styleClass: 'period-action-success',
+          disabled: this.sending,
+          command: () => this.sendEmails(),
+        },
+      );
+    }
+
+    if (this.period?.status === 'APPROVED') {
+      actions.push(
+        { separator: true },
+        {
+          label: 'Cerrar período',
+          icon: this.closing ? 'pi pi-spin pi-spinner' : 'pi pi-lock',
+          styleClass: 'period-action-warning',
+          disabled: this.closing,
+          command: () => this.confirmClose(),
+        },
+      );
+    }
+
+    return actions;
+  }
+
   get amountForCurrentPeriod(): number {
+    if (this.isSelectedPeriodClosed) return 0;
     return this.selectedPayment
       ? Math.min(Math.max(0, this.enteredPaymentAmount - this.moraToApply), this.periodPending(this.selectedPayment))
       : 0;
@@ -159,12 +270,19 @@ export class CondoPeriodDetailComponent implements OnInit {
   }
 
   get paymentAmountAllowed(): boolean {
-    return !!this.selectedPayment &&
-      this.enteredPaymentAmount <= this.periodPending(this.selectedPayment) + this.ownerMoraAvailable + 0.01;
+    if (!this.selectedPayment) return false;
+    const maxAllowed = this.isSelectedPeriodClosed
+      ? this.ownerMoraAvailable
+      : this.periodPending(this.selectedPayment) + this.ownerMoraAvailable;
+    return this.enteredPaymentAmount <= maxAllowed + 0.01;
   }
 
   ngOnInit() {
     this.route.params.subscribe(p => this.loadPeriod(p['id']));
+  }
+
+  ngOnDestroy() {
+    this.revokeProofPreviewObjectUrl();
   }
 
   loadPeriod(id: string) {
@@ -191,13 +309,54 @@ export class CondoPeriodDetailComponent implements OnInit {
     });
   }
 
-  generate() {
+  openAliquotPreview() {
     if (!this.period) return;
+    this.loadingAliquotPreview = true;
+    this.showAliquotPreview = true;
+    this.showAliquotPreviewDetails = false;
+    this.aliquotPreviewRows = [];
+    this.aliquotPreviewBase = Number(this.period.grand_total || 0) > 0
+      ? Number(this.period.grand_total)
+      : Number(this.period.total_expenses || 0);
+
+    this.svc.getOwners(true).subscribe({
+      next: ({ owners }) => {
+        const activeOwners = owners
+          .filter(owner => owner.isActive)
+          .sort((first, second) =>
+            String(first.apartmentNumber || '').localeCompare(
+              String(second.apartmentNumber || ''),
+              'es',
+              { numeric: true, sensitivity: 'base' },
+            ),
+          );
+        this.aliquotPreviewParticipation = Math.round(
+          activeOwners.reduce((sum, owner) => sum + Number(owner.participationPct || 0), 0) * 100
+        ) / 100;
+        this.aliquotPreviewRows = activeOwners.map(owner => ({
+          ownerId: owner.id,
+          apartmentNumber: owner.apartmentNumber,
+          fullName: owner.fullName,
+          participationPct: Number(owner.participationPct || 0),
+          amount: Math.round(this.aliquotPreviewBase * Number(owner.participationPct || 0) / 100 * 100) / 100,
+        }));
+        this.loadingAliquotPreview = false;
+      },
+      error: err => {
+        this.loadingAliquotPreview = false;
+        this.msg.add({ severity: 'error', summary: 'No se pudo previsualizar', detail: err.error?.message || 'Intenta nuevamente.' });
+      },
+    });
+  }
+
+  generate() {
+    if (!this.period || !this.canConfirmAliquotPreview) return;
     this.generating = true;
     const id = this.period.id;
     this.svc.generateAliquots(id).subscribe({
       next: () => {
         this.generating = false;
+        this.showAliquotPreview = false;
         this.msg.add({ severity: 'success', summary: 'Alícuotas generadas' });
         this.loadPeriod(id);
       },
@@ -269,6 +428,10 @@ export class CondoPeriodDetailComponent implements OnInit {
 
     this.movementPdfFile = file;
     this.importMovementPdf(file);
+  }
+
+  openMovementPdfPicker() {
+    this.movementPdfInput?.nativeElement.click();
   }
 
   private importMovementPdf(file: File) {
@@ -453,7 +616,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   canConfirmReceipt(receipt: BulkReceipt): boolean {
     const match = this.receiptMatch(receipt);
     return !!match && match.paymentStatus !== 'PAID' && !!receipt.amount &&
-      receipt.status === 'ready';
+      receipt.status === 'ready' && this.receiptPaymentAmountAllowed(receipt);
   }
 
   receiptMatch(receipt: BulkReceipt): OcrOwnerMatch | undefined {
@@ -479,18 +642,106 @@ export class CondoPeriodDetailComponent implements OnInit {
     return `${(receipt.file.size / 1024).toFixed(1)} KB`;
   }
 
+  canPreviewReceipt(receipt: BulkReceipt): boolean {
+    return !!receipt.file || !!receipt.movementProofUrl;
+  }
+
+  receiptReadDate(receipt: BulkReceipt): string {
+    return receipt.paymentDate || String(receipt.scan?.extractedData?.date || '');
+  }
+
   pendingAmount(receipt: BulkReceipt): number {
     const match = this.receiptMatch(receipt);
     return match ? Math.max(0, match.totalDue - match.amountPaid) : 0;
+  }
+
+  receiptPayment(receipt: BulkReceipt): AliquotPayment | undefined {
+    const match = this.receiptMatch(receipt);
+    const targetPeriod = this.receiptTargetPeriod(receipt);
+    return match ? targetPeriod?.payments?.find(payment => payment.id === match.paymentId) : undefined;
+  }
+
+  receiptOwnerMoraAvailable(receipt: BulkReceipt): number {
+    return Number(this.receiptPayment(receipt)?.owner?.moraAmount || 0);
+  }
+
+  receiptEnteredPaymentAmount(receipt: BulkReceipt): number {
+    return Number(receipt.amount || 0);
+  }
+
+  receiptMoraToApply(receipt: BulkReceipt): number {
+    return Math.min(this.receiptEnteredPaymentAmount(receipt), this.receiptOwnerMoraAvailable(receipt));
+  }
+
+  receiptFinalMoraAfterPayment(receipt: BulkReceipt): number {
+    return Math.max(0, this.receiptOwnerMoraAvailable(receipt) - this.receiptMoraToApply(receipt));
+  }
+
+  receiptTargetPeriodClosed(receipt: BulkReceipt): boolean {
+    return this.receiptTargetPeriod(receipt)?.status === 'CLOSED';
+  }
+
+  receiptAmountForCurrentPeriod(receipt: BulkReceipt): number {
+    if (this.receiptTargetPeriodClosed(receipt)) return 0;
+    return Math.min(
+      Math.max(0, this.receiptEnteredPaymentAmount(receipt) - this.receiptMoraToApply(receipt)),
+      this.pendingAmount(receipt)
+    );
+  }
+
+  receiptHasMoraPriority(receipt: BulkReceipt): boolean {
+    return this.receiptOwnerMoraAvailable(receipt) > 0;
+  }
+
+  receiptPaymentAmountAllowed(receipt: BulkReceipt): boolean {
+    const maxAllowed = this.receiptTargetPeriodClosed(receipt)
+      ? this.receiptOwnerMoraAvailable(receipt)
+      : this.pendingAmount(receipt) + this.receiptOwnerMoraAvailable(receipt);
+    return this.receiptEnteredPaymentAmount(receipt) <= maxAllowed + 0.01;
   }
 
   periodLabel(period: CondoExpensePeriod): string {
     return `${MONTHS[period.month - 1]} ${period.year}`;
   }
 
+  get manualPeriodOptions() {
+    const periods = [
+      ...(this.period && this.period.status !== 'CLOSED' ? [this.period] : []),
+      ...this.manualPeriods,
+    ];
+    const uniquePeriods = periods.filter((period, index, list) =>
+      !!period && list.findIndex(item => item.id === period.id) === index
+    );
+    return uniquePeriods.map(period => ({
+      id: period.id,
+      label: this.periodLabel(period),
+      month: period.month,
+      year: period.year,
+    }));
+  }
+
+  manualPaymentOptions(receipt: BulkReceipt) {
+    return [...(receipt.manualPeriod?.payments || [])]
+      .sort((first, second) =>
+        String(first.owner?.apartmentNumber || '').localeCompare(
+          String(second.owner?.apartmentNumber || ''),
+          'es',
+          { numeric: true, sensitivity: 'base' },
+        ),
+      )
+      .map(payment => ({
+        id: payment.id,
+        label: `${payment.owner?.apartmentNumber || '—'} — ${payment.owner?.fullName || 'Propietario'}`,
+        apartmentNumber: payment.owner?.apartmentNumber || '',
+        fullName: payment.owner?.fullName || '',
+        disabled: payment.status === 'PAID',
+      }));
+  }
+
   openManualAssignment(receipt: BulkReceipt) {
     receipt.showManualAssignment = true;
     if (receipt.status === 'error') receipt.status = 'ready';
+    this.selectCurrentPeriodForReceipt(receipt);
     if (this.manualPeriods.length || this.loadingManualPeriods) return;
     this.loadingManualPeriods = true;
     this.svc.getPeriods().subscribe({
@@ -499,11 +750,23 @@ export class CondoPeriodDetailComponent implements OnInit {
     });
   }
 
+  private selectCurrentPeriodForReceipt(receipt: BulkReceipt) {
+    if (!this.period || receipt.manualPeriodId) return;
+    receipt.manualPeriodId = this.period.id;
+    receipt.manualPeriod = this.period;
+    receipt.manualPaymentId = undefined;
+    receipt.manualMatch = undefined;
+  }
+
   onManualPeriodSelected(receipt: BulkReceipt) {
     receipt.manualPaymentId = undefined;
     receipt.manualMatch = undefined;
     receipt.manualPeriod = undefined;
     if (!receipt.manualPeriodId) return;
+    if (receipt.manualPeriodId === this.period?.id) {
+      receipt.manualPeriod = this.period;
+      return;
+    }
     this.svc.getPeriod(receipt.manualPeriodId).subscribe({
       next: period => receipt.manualPeriod = period,
       error: err => receipt.error = err.error?.message || 'No se pudieron cargar las alícuotas.',
@@ -596,7 +859,7 @@ export class CondoPeriodDetailComponent implements OnInit {
     }).subscribe({
       next: (payment) => {
         this.uploadingProof = true;
-        this.svc.uploadProof(payment.id, proof, payment.moraPaymentRecordIds).subscribe({
+        this.svc.uploadProof(payment.id, proof, payment.moraPaymentRecordIds, payment.paymentRecordId).subscribe({
           next: () => this.finishPaymentRegistration(true),
           error: (err) => {
             this.saving = false;
@@ -635,9 +898,35 @@ export class CondoPeriodDetailComponent implements OnInit {
   }
 
   openProofPreviewUrl(url: string) {
+    this.revokeProofPreviewObjectUrl();
     this.proofPreviewUrl = url;
+    this.proofPreviewIsPdf = this.isPdfUrl(url);
     this.proofPreviewResource = this.sanitizer.bypassSecurityTrustResourceUrl(url);
     this.showProofPreview = true;
+  }
+
+  openBulkReceiptPreview(receipt: BulkReceipt) {
+    if (receipt.movementProofUrl) {
+      this.openProofPreviewUrl(receipt.movementProofUrl);
+      return;
+    }
+    if (!receipt.file) return;
+    this.revokeProofPreviewObjectUrl();
+    const url = URL.createObjectURL(receipt.file);
+    this.proofPreviewObjectUrl = url;
+    this.proofPreviewUrl = url;
+    this.proofPreviewIsPdf = this.fileLooksPdf(receipt.file);
+    this.proofPreviewResource = this.proofPreviewIsPdf
+      ? this.sanitizer.bypassSecurityTrustResourceUrl(url)
+      : null;
+    this.showProofPreview = true;
+  }
+
+  clearProofPreview() {
+    this.revokeProofPreviewObjectUrl();
+    this.proofPreviewUrl = '';
+    this.proofPreviewResource = null;
+    this.proofPreviewIsPdf = false;
   }
 
   openMoraProofs(payment: AliquotPayment) {
@@ -650,8 +939,36 @@ export class CondoPeriodDetailComponent implements OnInit {
     this.showMoraProofsDialog = true;
   }
 
+  openPaymentRecords(payment: AliquotPayment) {
+    this.selectedPaymentRecordsPayment = payment;
+    this.showPaymentRecordsDialog = true;
+  }
+
+  paymentRecordLabel(record: AliquotPaymentRecord): string {
+    return record.sourceType === 'OCR' ? 'OCR' :
+      record.sourceType === 'PROOF' ? 'Comprobante' : 'Manual';
+  }
+
+  pendingProofRecordId(payment: AliquotPayment | null): string | undefined {
+    return payment?.paymentRecords?.find(record => !record.proofUrl)?.id;
+  }
+
   isPdfProof(): boolean {
-    return /\.pdf(?:$|[?#])/i.test(this.proofPreviewUrl) || /\/raw\/upload\//i.test(this.proofPreviewUrl);
+    return this.proofPreviewIsPdf || this.isPdfUrl(this.proofPreviewUrl);
+  }
+
+  private isPdfUrl(url: string): boolean {
+    return /\.pdf(?:$|[?#])/i.test(url) || /\/raw\/upload\//i.test(url);
+  }
+
+  private fileLooksPdf(file: File): boolean {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  }
+
+  private revokeProofPreviewObjectUrl() {
+    if (!this.proofPreviewObjectUrl) return;
+    URL.revokeObjectURL(this.proofPreviewObjectUrl);
+    this.proofPreviewObjectUrl = null;
   }
 
   openProofDialog(payment: AliquotPayment) {
@@ -677,7 +994,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   uploadProof() {
     if (!this.selectedPayment || !this.selectedFile) return;
     this.uploadingProof = true;
-    this.svc.uploadProof(this.selectedPayment.id, this.selectedFile).subscribe({
+    this.svc.uploadProof(this.selectedPayment.id, this.selectedFile, undefined, this.pendingProofRecordId(this.selectedPayment)).subscribe({
       next: () => {
         this.msg.add({ severity: 'success', summary: 'Comprobante subido', detail: 'Estado actualizado automáticamente' });
         this.showProofDialog = false;
@@ -716,7 +1033,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   }
 
   addExtra() {
-    if (!this.selectedPayment || this.newExtraAmount <= 0 || !this.newExtraNotes.trim()) return;
+    if (!this.selectedPayment || !this.canManageExtras || this.newExtraAmount <= 0 || !this.newExtraNotes.trim()) return;
     this.savingExtra = true;
     this.svc.addPaymentExtra(this.selectedPayment.id, this.newExtraAmount, this.newExtraNotes.trim()).subscribe({
       next: () => {
@@ -733,6 +1050,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   }
 
   startEditExtra(extra: PaymentExtra) {
+    if (!this.canManageExtras) return;
     this.editingExtra     = extra;
     this.editExtraAmount  = extra.amount;
     this.editExtraNotes   = extra.notes;
@@ -741,7 +1059,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   cancelEditExtra() { this.editingExtra = null; }
 
   saveEditExtra() {
-    if (!this.editingExtra || this.editExtraAmount <= 0 || !this.editExtraNotes.trim()) return;
+    if (!this.canManageExtras || !this.editingExtra || this.editExtraAmount <= 0 || !this.editExtraNotes.trim()) return;
     this.savingExtra = true;
     this.svc.updatePaymentExtra(this.editingExtra.id, this.editExtraAmount, this.editExtraNotes.trim()).subscribe({
       next: () => {
@@ -757,6 +1075,7 @@ export class CondoPeriodDetailComponent implements OnInit {
   }
 
   deleteExtra(extra: PaymentExtra) {
+    if (!this.canManageExtras) return;
     this.deletingExtra = extra.id;
     this.svc.deletePaymentExtra(extra.id).subscribe({
       next: () => {
@@ -805,6 +1124,11 @@ export class CondoPeriodDetailComponent implements OnInit {
     const map: Record<PaymentStatus, string> = { PENDING: 'Pendiente', PARTIAL: 'Parcial', PAID: 'Pagado', OVERDUE: 'En mora' };
     return map[s];
   }
+
+  expenseCategoryLabel(category: string): string {
+    return EXPENSE_CATEGORY_LABELS[category] || category;
+  }
+
   paymentStatusSeverity(s: PaymentStatus): TagSeverity {
     const map: Record<PaymentStatus, TagSeverity> = { PENDING: 'warning', PARTIAL: 'info', PAID: 'success', OVERDUE: 'danger' };
     return map[s];

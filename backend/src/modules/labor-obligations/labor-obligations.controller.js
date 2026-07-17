@@ -205,14 +205,16 @@ const upsert = async (req, res) => {
 
       await query(
         `INSERT INTO employee_obligations
-           (id, employee_id, obligation_id, is_active, override_value, payout_mode, prefer_monthly, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (id, employee_id, obligation_id, is_active, override_value, payout_mode, prefer_monthly, notes,
+            created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
          ON CONFLICT (employee_id, obligation_id) DO UPDATE SET
            is_active      = EXCLUDED.is_active,
            override_value = EXCLUDED.override_value,
            payout_mode    = EXCLUDED.payout_mode,
            prefer_monthly = EXCLUDED.prefer_monthly,
-           notes          = EXCLUDED.notes`,
+           notes          = EXCLUDED.notes,
+           updated_by     = EXCLUDED.updated_by`,
         [
           newId(), employeeId, item.obligation_id,
           item.is_active,
@@ -220,6 +222,7 @@ const upsert = async (req, res) => {
           item.payout_mode    ?? null,
           item.prefer_monthly ?? false,
           item.notes          ?? null,
+          req.user.id,
         ]
       );
     }
@@ -239,28 +242,37 @@ const upsert = async (req, res) => {
 
     if (data.fondosReservaAplica !== undefined) {
       await query(
-        `INSERT INTO employee_obligations (id, employee_id, obligation_id, is_active, payout_mode)
-         VALUES ($1, $2, $3, $4, 'IESS')
-         ON CONFLICT (employee_id, obligation_id) DO UPDATE SET is_active = EXCLUDED.is_active`,
-        [newId(), employeeId, FONDO_ID, data.fondosReservaAplica]
+        `INSERT INTO employee_obligations
+           (id, employee_id, obligation_id, is_active, payout_mode, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, 'IESS', $5, $5)
+         ON CONFLICT (employee_id, obligation_id) DO UPDATE SET
+           is_active = EXCLUDED.is_active,
+           updated_by = EXCLUDED.updated_by`,
+        [newId(), employeeId, FONDO_ID, data.fondosReservaAplica, req.user.id]
       );
     }
     if (data.iessQuirofario !== undefined) {
       await query(
-        `INSERT INTO employee_obligations (id, employee_id, obligation_id, is_active, override_value)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO employee_obligations
+           (id, employee_id, obligation_id, is_active, override_value, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)
          ON CONFLICT (employee_id, obligation_id) DO UPDATE SET
-           is_active = EXCLUDED.is_active, override_value = EXCLUDED.override_value`,
-        [newId(), employeeId, QUIRO_ID, data.iessQuirofario > 0, data.iessQuirofario > 0 ? data.iessQuirofario : null]
+           is_active = EXCLUDED.is_active,
+           override_value = EXCLUDED.override_value,
+           updated_by = EXCLUDED.updated_by`,
+        [newId(), employeeId, QUIRO_ID, data.iessQuirofario > 0, data.iessQuirofario > 0 ? data.iessQuirofario : null, req.user.id]
       );
     }
     if (data.iessHipotecario !== undefined) {
       await query(
-        `INSERT INTO employee_obligations (id, employee_id, obligation_id, is_active, override_value)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO employee_obligations
+           (id, employee_id, obligation_id, is_active, override_value, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)
          ON CONFLICT (employee_id, obligation_id) DO UPDATE SET
-           is_active = EXCLUDED.is_active, override_value = EXCLUDED.override_value`,
-        [newId(), employeeId, HIPO_ID, data.iessHipotecario > 0, data.iessHipotecario > 0 ? data.iessHipotecario : null]
+           is_active = EXCLUDED.is_active,
+           override_value = EXCLUDED.override_value,
+           updated_by = EXCLUDED.updated_by`,
+        [newId(), employeeId, HIPO_ID, data.iessHipotecario > 0, data.iessHipotecario > 0 ? data.iessHipotecario : null, req.user.id]
       );
     }
   }

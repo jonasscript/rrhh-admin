@@ -97,7 +97,10 @@ const changePassword = async (req, res) => {
   if (!valid) throw new AppError('Contraseña actual incorrecta', 400);
 
   const hashed = await bcrypt.hash(newPassword, 12);
-  await query('UPDATE users SET password = $1 WHERE id = $2', [hashed, req.user.id]);
+  await query(
+    'UPDATE users SET password = $1, updated_by = $2 WHERE id = $3',
+    [hashed, req.user.id, req.user.id]
+  );
 
   success(res, null, 200, 'Contraseña actualizada');
 };

@@ -77,6 +77,7 @@ export class CondoPeriodsComponent implements OnInit {
   saving    = false;
   deleting  = false;
   showDialog = false;
+  editingPeriod: CondoExpensePeriod | null = null;
 
   // ── Carga masiva de comprobantes ─────────────────────────
   showBulkUpload = false;
@@ -100,21 +101,35 @@ export class CondoPeriodsComponent implements OnInit {
   provisionItems: (ProvisionCatalogItem & { selected: boolean; customValue: number })[] = [];
 
   get provisionBreakdown(): { id: string; name: string; amount: number }[] {
-    return this.provisionItems
-      .filter(p => p.selected)
-      .map(p => {
-        const ct = p.calc_type as string;
-        let amount: number;
-        if (ct === 'FIXED')    { amount = p.value; }
-        else if (ct === 'VARIABLE') { amount = p.customValue; }
-        else { amount = Math.round(this.grandTotal * p.value / 100 * 100) / 100; }
-        return { id: p.id, name: p.name, amount };
-      });
+    const selected = this.provisionItems.filter(p => p.selected);
+    const fixedAndVariableTotal = selected.reduce((sum, p) => {
+      const ct = p.calc_type as string;
+      if (ct === 'FIXED') return sum + p.value;
+      if (ct === 'VARIABLE') return sum + p.customValue;
+      return sum;
+    }, 0);
+    const percentageBase = this.grandTotal + fixedAndVariableTotal;
+
+    return selected.map(p => {
+      const ct = p.calc_type as string;
+      let amount: number;
+      if (ct === 'FIXED') { amount = p.value; }
+      else if (ct === 'VARIABLE') { amount = p.customValue; }
+      else { amount = Math.round(percentageBase * p.value / 100 * 100) / 100; }
+      return { id: p.id, name: p.name, amount };
+    });
   }
   get totalProvisions():          number { return this.provisionBreakdown.reduce((s, p) => s + p.amount, 0); }
   get grandTotalWithProvisions(): number { return this.grandTotal + this.totalProvisions; }
+  provisionAmount(id: string): number {
+    return this.provisionBreakdown.find(p => p.id === id)?.amount ?? 0;
+  }
 
   monthOptions = MONTHS.map((label, i) => ({ label, value: i + 1 }));
+  yearOptions = Array.from({ length: 2050 - 1990 + 1 }, (_, i) => {
+    const year = 1990 + i;
+    return { label: String(year), value: year };
+  }).reverse();
   typeOptions  = [
     { label: 'Fijo',     value: 'FIXED'    as ExpenseType },
     { label: 'Variable', value: 'VARIABLE' as ExpenseType },
@@ -144,6 +159,7 @@ export class CondoPeriodsComponent implements OnInit {
   }
 
   openNewPeriod() {
+    this.editingPeriod = null;
     this.selectedMonth = new Date().getMonth() + 1;
     this.selectedYear  = new Date().getFullYear();
     this.adHocItems    = [];
@@ -184,6 +200,106 @@ export class CondoPeriodsComponent implements OnInit {
     });
   }
 
+  openEditPeriod(period: CondoExpensePeriod) {
+    if (period.status !== 'DRAFT') {
+      this.msg.add({ severity: 'warn', summary: 'No editable', detail: 'Solo se pueden editar períodos en borrador.' });
+      return;
+    }
+    this.editingPeriod = period;
+    this.selectedMonth = period.month;
+    this.selectedYear  = period.year;
+    this.adHocItems    = [];
+    this.lineItems     = [];
+    this.periodNotes   = period.notes || '';
+    this.loadingItems  = true;
+    this.showDialog    = true;
+
+    forkJoin({
+      period:       this.svc.getPeriod(period.id),
+      periodItems:  this.svc.getPeriodExpenseItems(period.id),
+      items:        this.svc.getExpenseItems(),
+      catalog:      this.svc.getProvisionCatalog(),
+    }).subscribe({
+      next: ({ period: fullPeriod, periodItems, items, catalog }) => {
+        this.editingPeriod = fullPeriod;
+        this.selectedMonth = fullPeriod.month;
+        this.selectedYear  = fullPeriod.year;
+        this.periodNotes   = fullPeriod.notes || '';
+
+        const periodItemByCatalogId = new Map(
+          periodItems
+            .filter(item => item.expenseItemId)
+            .map(item => [item.expenseItemId, item])
+        );
+        const existingCatalogIds = new Set(periodItemByCatalogId.keys());
+        const catalogRows = items.items
+          .filter(item => item.isActive || existingCatalogIds.has(item.id))
+          .sort((a, b) => a.displayOrder - b.displayOrder)
+          .map(item => {
+            const saved = periodItemByCatalogId.get(item.id);
+            return {
+              expenseItemId: item.id,
+              name:          saved?.name || item.name,
+              category:      saved?.category || item.category,
+              expenseType:   saved?.expenseType || item.expenseType,
+              amount:        saved?.amount ?? item.amount,
+              selected:      !!saved,
+              isRecurring:   item.isRecurring,
+              isAdHoc:       false,
+            };
+          });
+        const orphanCatalogRows = periodItems
+          .filter(item => item.expenseItemId && !items.items.some(catalogItem => catalogItem.id === item.expenseItemId))
+          .map(item => ({
+            expenseItemId: item.expenseItemId || null,
+            name:          item.name,
+            category:      item.category,
+            expenseType:   item.expenseType,
+            amount:        item.amount,
+            selected:      true,
+            isRecurring:   false,
+            isAdHoc:       false,
+          }));
+        this.lineItems = [...catalogRows, ...orphanCatalogRows];
+        this.adHocItems = periodItems
+          .filter(item => !item.expenseItemId)
+          .map(item => ({
+            expenseItemId: null,
+            name:          item.name,
+            category:      item.category,
+            expenseType:   item.expenseType,
+            amount:        item.amount,
+            selected:      true,
+            isRecurring:   false,
+            isAdHoc:       true,
+          }));
+
+        const periodProvisionById = new Map(
+          (fullPeriod.provisions || [])
+            .filter(provision => provision.provisionId)
+            .map(provision => [provision.provisionId, provision])
+        );
+        this.provisionCatalog = catalog;
+        this.provisionItems = catalog.map(provision => {
+          const saved = periodProvisionById.get(provision.id);
+          const value = parseFloat(String(provision.value)) || 0;
+          return {
+            ...provision,
+            value,
+            customValue: saved ? Number(saved.amount || 0) : value,
+            selected: !!saved,
+          };
+        });
+        this.loadingItems = false;
+      },
+      error: err => {
+        this.loadingItems = false;
+        this.showDialog = false;
+        this.msg.add({ severity: 'error', summary: 'No se pudo cargar el período', detail: err.error?.message || 'Intenta nuevamente.' });
+      },
+    });
+  }
+
   addAdHoc() {
     this.adHocItems.push({
       expenseItemId: null, name: '', category: 'OTHER',
@@ -194,10 +310,7 @@ export class CondoPeriodsComponent implements OnInit {
 
   removeAdHoc(i: number) { this.adHocItems.splice(i, 1); }
 
-  create() {
-    if (this.grandTotal === 0) return;
-    this.saving = true;
-
+  private periodPayload() {
     const items = [
       ...this.lineItems.filter(i => i.selected),
       ...this.adHocItems.filter(i => i.amount > 0 && i.name.trim()),
@@ -214,16 +327,51 @@ export class CondoPeriodsComponent implements OnInit {
     for (const p of selectedProvisions) {
       if ((p.calc_type as string) === 'VARIABLE') provisionAmounts[p.id] = p.customValue;
     }
-    this.svc.createPeriod({
-      month: this.selectedMonth, year: this.selectedYear,
+
+    return {
+      month: this.selectedMonth,
+      year: this.selectedYear,
       items,
       notes:            this.periodNotes || undefined,
       provisionIds:     selectedProvisions.map(p => p.id),
       provisionAmounts: Object.keys(provisionAmounts).length ? provisionAmounts : undefined,
-    }).subscribe({
+    };
+  }
+
+  savePeriod() {
+    if (this.editingPeriod) {
+      this.updatePeriod();
+    } else {
+      this.create();
+    }
+  }
+
+  create() {
+    if (this.grandTotal === 0) return;
+    this.saving = true;
+    this.svc.createPeriod(this.periodPayload()).subscribe({
       next: () => {
         this.msg.add({ severity: 'success', summary: 'Período creado' });
         this.showDialog = false; this.saving = false; this.load();
+      },
+      error: (err) => {
+        this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message });
+        this.saving = false;
+      },
+    });
+  }
+
+  updatePeriod() {
+    if (!this.editingPeriod || this.grandTotal === 0) return;
+    this.saving = true;
+    const periodName = `${this.monthName(this.selectedMonth)} ${this.selectedYear}`;
+    this.svc.updatePeriod(this.editingPeriod.id, this.periodPayload()).subscribe({
+      next: () => {
+        this.msg.add({ severity: 'success', summary: 'Período actualizado', detail: periodName });
+        this.showDialog = false;
+        this.saving = false;
+        this.editingPeriod = null;
+        this.load();
       },
       error: (err) => {
         this.msg.add({ severity: 'error', summary: 'Error', detail: err.error?.message });
@@ -237,6 +385,15 @@ export class CondoPeriodsComponent implements OnInit {
 
   severity(s: string): TagSeverity {
     return s === 'CLOSED' ? 'danger' : s === 'APPROVED' ? 'success' : 'info';
+  }
+
+  periodStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      DRAFT: 'Borrador',
+      APPROVED: 'Aprobado',
+      CLOSED: 'Cerrado',
+    };
+    return labels[status] || status;
   }
 
   fixedSum(p: any): number {

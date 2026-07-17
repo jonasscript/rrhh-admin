@@ -16,6 +16,19 @@
 }
 .filters-bar .field { display: flex; flex-direction: column; min-width: 150px; }
 .filters-bar .field label { font-size: .85rem; font-weight: 600; margin-bottom: .3rem; }
+.filters-bar > button {
+  align-self: flex-end;
+  min-height: 42px;
+}
+:host ::ng-deep .filters-bar .p-dropdown {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+:host ::ng-deep .filters-bar .p-dropdown-label {
+  display: flex;
+  align-items: center;
+}
 
 .executive-band {
   display: flex;
@@ -51,6 +64,7 @@
 .summ-card--savings     { border-top: 3px solid var(--cyan-500); }
 .summ-card--receivable  { border-top: 3px solid var(--red-400); }
 .summ-card--expenses    { border-top: 3px solid var(--orange-400); }
+.summ-card--admin       { border-top: 3px solid var(--surface-500); }
 .summ-card--positive    { border-top: 3px solid var(--green-500); }
 .summ-card--negative    { border-top: 3px solid var(--red-500); }
 .summ-content {
@@ -223,6 +237,7 @@
 .detail-table tfoot td { padding-top: .45rem; border-top: 1px solid var(--surface-300); border-bottom: 0; }
 .empty-detail { color: var(--text-color-secondary); font-size: .9rem; margin: 1rem 0 0; }
 .empty-detail strong { display: block; margin-top: .35rem; color: var(--text-color); }
+.receipt-inline { margin-left: .4rem; color: var(--primary-color); font-size: .78rem; font-weight: 700; text-decoration: none; }
 
 .loading-placeholder { padding: 3rem; text-align: center; color: var(--text-color-secondary); }
 

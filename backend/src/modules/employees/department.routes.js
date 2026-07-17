@@ -36,8 +36,9 @@ router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
   }).parse(req.body);
 
   const { rows } = await query(
-    `INSERT INTO departments (id, name, description) VALUES ($1, $2, $3) RETURNING *`,
-    [newId(), name, description || null]
+    `INSERT INTO departments (id, name, description, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $4) RETURNING *`,
+    [newId(), name, description || null, req.user.id]
   );
   success(res, rows[0], 201, 'Departamento creado');
 });
@@ -52,9 +53,10 @@ router.put('/:id', authorize('ADMIN', 'HR'), async (req, res) => {
   const { rows } = await query(
     `UPDATE departments SET
        name        = COALESCE($1, name),
-       description = COALESCE($2, description)
-     WHERE id = $3 RETURNING *`,
-    [name || null, description ?? null, req.params.id]
+       description = COALESCE($2, description),
+       updated_by  = $3
+     WHERE id = $4 RETURNING *`,
+    [name || null, description ?? null, req.user.id, req.params.id]
   );
   if (!rows[0]) throw new AppError('Departamento no encontrado', 404);
   success(res, rows[0]);
@@ -63,7 +65,10 @@ router.put('/:id', authorize('ADMIN', 'HR'), async (req, res) => {
 // DELETE /departments/:id
 router.delete('/:id', authorize('ADMIN'), async (req, res) => {
   // Desasociar empleados antes de eliminar
-  await query(`UPDATE employees SET department_id = NULL WHERE department_id = $1`, [req.params.id]);
+  await query(
+    `UPDATE employees SET department_id = NULL, updated_by = $1 WHERE department_id = $2`,
+    [req.user.id, req.params.id]
+  );
   const { rows } = await query('DELETE FROM departments WHERE id = $1 RETURNING id', [req.params.id]);
   if (!rows[0]) throw new AppError('Departamento no encontrado', 404);
   success(res, null, 200, 'Departamento eliminado');

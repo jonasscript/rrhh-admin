@@ -90,8 +90,8 @@ const createPeriod = async (req, res) => {
   }
 
   const { rows } = await query(
-    `INSERT INTO payroll_periods (id, month, year, created_by)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
+    `INSERT INTO payroll_periods (id, month, year, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $4) RETURNING *`,
     [newId(), month, year, req.user.id]
   );
   success(res, rows[0], 201, 'Período creado');
@@ -212,8 +212,8 @@ const generatePayroll = async (req, res) => {
             overtime_supp_hours, overtime_extr_hours, overtime_pay,
             decimo_tercero, decimo_cuarto, fondos_reserva, fondos_payout_mode,
             iess_employee, iess_employer, loan_discount, iess_loans, other_discounts,
-            gross_pay, net_pay)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+            gross_pay, net_pay, created_by, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)
          ON CONFLICT (period_id, employee_id) DO UPDATE SET
            base_salary = EXCLUDED.base_salary,
            worked_days = EXCLUDED.worked_days,
@@ -227,7 +227,8 @@ const generatePayroll = async (req, res) => {
            loan_discount = EXCLUDED.loan_discount,
            iess_loans = EXCLUDED.iess_loans,
            gross_pay = EXCLUDED.gross_pay,
-           net_pay = EXCLUDED.net_pay`,
+           net_pay = EXCLUDED.net_pay,
+           updated_by = EXCLUDED.updated_by`,
         [
           newId(),
           periodId, emp.id,
@@ -236,6 +237,7 @@ const generatePayroll = async (req, res) => {
           detail.decimoTercero, detail.decimoCuarto, detail.fondosReserva, detail.fondosPayoutMode,
           detail.iessEmployee, detail.iessEmployer, detail.loanDiscount, detail.iessLoansDiscount, detail.otherDiscounts,
           detail.grossPay, detail.netPay,
+          req.user.id,
         ]
       );
 
@@ -256,19 +258,22 @@ const generatePayroll = async (req, res) => {
         await client.query(
           `INSERT INTO obligation_payment_records
              (id, employee_id, obligation_id, payroll_period_id,
-              period_month, period_year, installment_num, total_installments, amount)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+              period_month, period_year, installment_num, total_installments, amount,
+              created_by, updated_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)
            ON CONFLICT (employee_id, obligation_id, payroll_period_id) DO UPDATE SET
-             amount = EXCLUDED.amount, installment_num = EXCLUDED.installment_num`,
+             amount = EXCLUDED.amount,
+             installment_num = EXCLUDED.installment_num,
+             updated_by = EXCLUDED.updated_by`,
           [newId(), emp.id, rec.id, periodId,
-           period.month, period.year, period.month, 12, rec.amount]
+           period.month, period.year, period.month, 12, rec.amount, req.user.id]
         );
       }
     }
 
     await client.query(
-      `UPDATE payroll_periods SET status = 'APPROVED' WHERE id = $1`,
-      [periodId]
+      `UPDATE payroll_periods SET status = 'APPROVED', updated_by = $1 WHERE id = $2`,
+      [req.user.id, periodId]
     );
 
     await client.query('COMMIT');
@@ -360,15 +365,16 @@ const updateDetail = async (req, res) => {
        overtime_supp_hours = $1, overtime_extr_hours = $2, overtime_pay = $3,
        decimo_tercero = $4, decimo_cuarto = $5, fondos_reserva = $6, fondos_payout_mode = $7,
        iess_employee = $8, iess_employer = $9, loan_discount = $10, iess_loans = $11,
-       other_discounts = $12, gross_pay = $13, net_pay = $14, notes = $15
-     WHERE period_id = $16 AND employee_id = $17
+       other_discounts = $12, gross_pay = $13, net_pay = $14, notes = $15,
+       updated_by = $16
+     WHERE period_id = $17 AND employee_id = $18
      RETURNING *`,
     [
       detail.overtimeSuppHours, detail.overtimeExtrHours, detail.overtimePay,
       detail.decimoTercero, detail.decimoCuarto, detail.fondosReserva, detail.fondosPayoutMode,
       detail.iessEmployee, detail.iessEmployer, detail.loanDiscount, detail.iessLoansDiscount,
       detail.otherDiscounts, detail.grossPay, detail.netPay,
-      data.notes || null, periodId, employeeId,
+      data.notes || null, req.user.id, periodId, employeeId,
     ]
   );
   success(res, rows[0]);
@@ -377,8 +383,8 @@ const updateDetail = async (req, res) => {
 // POST /payroll/periods/:periodId/close
 const closePeriod = async (req, res) => {
   const { rows } = await query(
-    `UPDATE payroll_periods SET status = 'CLOSED' WHERE id = $1 AND status != 'CLOSED' RETURNING *`,
-    [req.params.periodId]
+    `UPDATE payroll_periods SET status = 'CLOSED', updated_by = $1 WHERE id = $2 AND status != 'CLOSED' RETURNING *`,
+    [req.user.id, req.params.periodId]
   );
   if (!rows[0]) throw new AppError('Período no encontrado o ya cerrado', 404);
   success(res, rows[0], 200, 'Período cerrado');

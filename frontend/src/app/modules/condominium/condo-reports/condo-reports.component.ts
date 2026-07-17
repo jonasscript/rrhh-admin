@@ -158,21 +158,28 @@ export class CondoReportsComponent implements OnInit {
   }
 
   get totalOperatingExpenses(): number {
-    return this.report?.summary.total_expenses || 0;
+    return this.report?.summary.total_operating_expenses ?? this.report?.summary.total_expenses ?? 0;
   }
 
-  get totalProvisionedSavings(): number {
+  get totalAdministrativeExpenses(): number {
+    return this.report?.summary.total_admin_expenses || 0;
+  }
+
+  get totalExpectedProvisionedSavings(): number {
     return this.report?.summary.total_provisions || 0;
+  }
+
+  get totalActualProvisionedSavings(): number {
+    return this.report?.rows.reduce((sum, row) => sum + this.periodActualProvisionedSavings(row), 0) ?? 0;
+  }
+
+  get totalProvisionSavingsPending(): number {
+    return this.round2(Math.max(0, this.totalExpectedProvisionedSavings - this.totalActualProvisionedSavings));
   }
 
   get operatingNetResult(): number {
     if (!this.report) return 0;
     return this.round2(this.report.summary.total_collected - this.totalOperatingExpenses);
-  }
-
-  get accrualResult(): number {
-    if (!this.report) return 0;
-    return this.round2(this.report.summary.total_billed - this.totalOperatingExpenses);
   }
 
   get sortedMorosos(): CondoOwner[] {
@@ -185,11 +192,22 @@ export class CondoReportsComponent implements OnInit {
   }
 
   periodCashResult(row: BalancePeriodRow): number {
-    return this.round2(row.ingresos.total_collected - row.egresos.total_expenses);
+    return this.round2(row.ingresos.total_collected - this.periodOperatingExpenses(row));
   }
 
-  periodAccrualResult(row: BalancePeriodRow): number {
-    return this.round2(row.ingresos.total_billed - row.egresos.total_expenses);
+  periodOperatingExpenses(row: BalancePeriodRow): number {
+    return this.round2(row.egresos.total_operating_expenses ?? row.egresos.total_expenses);
+  }
+
+  periodActualProvisionedSavings(row: BalancePeriodRow): number {
+    const expected = this.toNumber(row.egresos.total_provisions);
+    if (expected <= 0) return 0;
+    const availableAfterExpenses = Math.max(0, this.toNumber(row.ingresos.total_collected) - this.periodOperatingExpenses(row));
+    return this.round2(Math.min(expected, availableAfterExpenses));
+  }
+
+  periodProvisionSavingsPending(row: BalancePeriodRow): number {
+    return this.round2(Math.max(0, this.toNumber(row.egresos.total_provisions) - this.periodActualProvisionedSavings(row)));
   }
 
   periodOperatingCumulative(row: BalancePeriodRow): number {

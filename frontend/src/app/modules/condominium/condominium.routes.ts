@@ -14,6 +14,10 @@ export const CONDOMINIUM_ROUTES: Routes = [
     loadComponent: () => import('./condo-expenses/condo-expenses.component').then(m => m.CondoExpensesComponent),
   },
   {
+    path: 'admin-expenses',
+    loadComponent: () => import('./condo-admin-expenses/condo-admin-expenses.component').then(m => m.CondoAdminExpensesComponent),
+  },
+  {
     path: 'periods',
     loadComponent: () => import('./condo-periods/condo-periods.component').then(m => m.CondoPeriodsComponent),
   },

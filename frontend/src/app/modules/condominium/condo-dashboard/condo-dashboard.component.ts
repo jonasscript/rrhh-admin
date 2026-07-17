@@ -5,7 +5,7 @@ import { TagModule } from 'primeng/tag';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { CondominiumService } from '../../../shared/models/condominium.service';
-import { CondoExpensePeriod, CondoOwner } from '../../../shared/models/models';
+import { CondoAdminExpenseSummary, CondoExpensePeriod, CondoOwner } from '../../../shared/models/models';
 
 type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | 'danger' | undefined;
 
@@ -36,6 +36,7 @@ export class CondoDashboardComponent implements OnInit {
   owners: CondoOwner[] = [];
   morosos: CondoOwner[] = [];
   periods: CondoExpensePeriod[] = [];
+  adminExpenseSummary: CondoAdminExpenseSummary | null = null;
 
   ngOnInit() {
     this.loadDashboard();
@@ -49,11 +50,13 @@ export class CondoDashboardComponent implements OnInit {
       owners: this.svc.getOwners(false).pipe(catchError(() => of({ owners: [], totalParticipationPct: 0 }))),
       morosos: this.svc.getMorosidadReport().pipe(catchError(() => of([] as CondoOwner[]))),
       periods: this.svc.getPeriods().pipe(catchError(() => of([] as CondoExpensePeriod[]))),
+      adminExpenses: this.svc.getAdminExpenseSummary().pipe(catchError(() => of(null))),
     }).subscribe({
-      next: ({ owners, morosos, periods }) => {
+      next: ({ owners, morosos, periods, adminExpenses }) => {
         this.owners = owners.owners;
         this.morosos = morosos;
         this.periods = periods;
+        this.adminExpenseSummary = adminExpenses;
         this.loading = false;
       },
       error: () => {
@@ -158,6 +161,13 @@ export class CondoDashboardComponent implements OnInit {
         hint: `${this.periods.length} períodos registrados`,
         icon: 'pi pi-calendar-clock',
         tone: this.openPeriodsCount > 0 ? 'amber' : 'green',
+      },
+      {
+        label: 'Gastos administrativos',
+        value: this.currency(this.adminExpenseSummary?.total || 0),
+        hint: `${this.adminExpenseSummary?.count || 0} gastos registrados este mes`,
+        icon: 'pi pi-receipt',
+        tone: (this.adminExpenseSummary?.total || 0) > 0 ? 'amber' : 'slate',
       },
     ];
   }

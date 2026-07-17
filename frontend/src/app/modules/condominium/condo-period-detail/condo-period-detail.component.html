@@ -10,19 +10,15 @@
             <p-tag [value]="periodStatusLabel(period.status)" [severity]="statusSeverity(period.status)" />
           </div>
           <div class="header-actions">
+            <input #movementPdfInput type="file" accept="application/pdf,.pdf" hidden (change)="onMovementPdfSelected($event)" />
             @if (period.status === 'DRAFT') {
-              <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="generate()" [loading]="generating"></button>
-            }
-            @if (period.payments?.length && period.status !== 'CLOSED') {
-              <input #movementPdfInput type="file" accept="application/pdf,.pdf" hidden (change)="onMovementPdfSelected($event)" />
-              <button pButton icon="pi pi-file-pdf" label="Importar movimientos PDF" severity="secondary"
-                (click)="movementPdfInput.click()" [loading]="importingMovements"></button>
+              <button pButton icon="pi pi-refresh" label="Generar alícuotas" (click)="openAliquotPreview()" [loading]="loadingAliquotPreview || generating"></button>
+            } @else if (canManagePeriodPayments) {
               <button pButton icon="pi pi-images" label="Cargar comprobantes" severity="info" (click)="openBulkUpload()"></button>
-              <button pButton icon="pi pi-send" label="Enviar correos" severity="success" (click)="sendEmails()" [loading]="sending"></button>
             }
-            @if (period.status === 'APPROVED') {
-              <button pButton icon="pi pi-lock" label="Cerrar período" severity="warning" (click)="confirmClose()" [disabled]="closing"></button>
-            }
+            <button pButton icon="pi pi-ellipsis-v" label="Más acciones" severity="secondary" [outlined]="true"
+              (click)="headerActionsMenu.toggle($event)"></button>
+            <p-menu #headerActionsMenu [model]="headerActionItems" [popup]="true" [appendTo]="'body'" styleClass="period-actions-menu" />
           </div>
         </div>
 
@@ -55,7 +51,12 @@
         </div>
 
         <!-- Tabla de pagos -->
-        <p-table [value]="period.payments || []" stripedRows responsiveLayout="scroll">
+        <p-table
+          [value]="period.payments || []"
+          stripedRows
+          responsiveLayout="scroll"
+          styleClass="period-payments-table"
+        >
           <ng-template pTemplate="header">
             <tr>
               <th>Depto.</th>
@@ -86,9 +87,13 @@
                     ${{ payment.extrasTotal | number:'1.2-2' }}
                   </span>
                 } @else {
-                  <button pButton icon="pi pi-plus" [text]="true" [rounded]="true" size="small"
-                    severity="secondary" (click)="openExtraDialog(payment)"
-                    pTooltip="Agregar cargo extra" [appendTo]="'body'" [fitContent]="true" [disabled]="payment.status === 'PAID'"></button>
+                  @if (canManagePaymentExtras(payment)) {
+                    <button pButton icon="pi pi-plus" [text]="true" [rounded]="true" size="small"
+                      severity="secondary" (click)="openExtraDialog(payment)"
+                      pTooltip="Agregar cargo extra" [appendTo]="'body'" [fitContent]="true"></button>
+                  } @else {
+                    <span class="text-color-secondary text-sm">—</span>
+                  }
                 }
               </td>
               <td><strong>${{ payment.totalDue | number:'1.2-2' }}</strong></td>
@@ -98,8 +103,11 @@
               </td>
               <td>{{ payment.paymentDate ? (payment.paymentDate | date:'dd/MM/yy') : '—' }}</td>
               <td>
-                @if (payment.wasOverdue && (payment.moraPaymentProofs?.length || 0) > 0) {
-                  <button pButton label="Ver comprobante de mora" icon="pi pi-paperclip" [text]="true" size="small"
+                @if ((payment.paymentRecords?.length || 0) > 0) {
+                  <button pButton [label]="'Ver pagos (' + (payment.paymentRecords?.length || 0) + ')'" icon="pi pi-list" [text]="true" size="small"
+                    class="proof-link" (click)="openPaymentRecords(payment)"></button>
+                } @else if (payment.wasOverdue && (payment.moraPaymentProofs?.length || 0) > 0) {
+                  <button pButton label="Ver pagos de mora" icon="pi pi-list" [text]="true" size="small"
                     class="proof-link" (click)="openMoraProofs(payment)"></button>
                 } @else if (payment.proofUrl) {
                   <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
@@ -112,7 +120,7 @@
                 <div class="flex flex-column gap-1 align-items-start">
                   <p-tag [value]="paymentStatusLabel(payment.status)"
                     [severity]="paymentStatusSeverity(payment.status)" />
-                  @if (payment.wasOverdue) {
+                  @if (isOverduePaymentSettled(payment)) {
                     <p-tag value="Mora saldada" severity="warning" pTooltip="Esta cuota estuvo en mora y fue pagada posteriormente." tooltipPosition="left" [appendTo]="'body'" />
                   }
                 </div>
@@ -157,6 +165,268 @@
       </div>
     </p-dialog>
 
+    <p-dialog [(visible)]="showAliquotPreview" header="Previsualización de alícuotas" [modal]="true"
+      [style]="{ width: '920px', maxWidth: '96vw' }" [draggable]="false">
+      @if (period) {
+        <div class="aliquot-preview-flow">
+          <section class="aliquot-preview-section">
+            <div class="aliquot-preview-section-head">
+              <div>
+                <span>Resumen</span>
+                <strong>{{ monthName }} {{ period.year }}</strong>
+              </div>
+            </div>
+            <div class="period-detail-overview">
+              <div>
+                <span>Base de cálculo</span>
+                <strong>{{ aliquotPreviewBase | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+              </div>
+              <div>
+                <span>Participación activa</span>
+                <strong [class.mora-txt]="hasInvalidAliquotPreviewParticipation">{{ aliquotPreviewParticipation | number:'1.2-2' }}%</strong>
+              </div>
+              <div>
+                <span>Propietarios activos</span>
+                <strong>{{ aliquotPreviewRows.length }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="aliquot-preview-section">
+            <div class="aliquot-preview-section-head">
+              <div>
+                <span>Detalle del período</span>
+                <strong>Gastos y provisiones</strong>
+              </div>
+              <button pButton type="button" icon="pi pi-list" [outlined]="true" severity="secondary" size="small"
+                [label]="showAliquotPreviewDetails ? 'Ocultar' : 'Ver detalles'"
+                (click)="showAliquotPreviewDetails = !showAliquotPreviewDetails"></button>
+            </div>
+
+            @if (showAliquotPreviewDetails) {
+              @if (period.notes || period.variable_notes) {
+                <div class="period-detail-notes">
+                  @if (period.notes) {
+                    <p><strong>Notas:</strong> {{ period.notes }}</p>
+                  }
+                  @if (period.variable_notes) {
+                    <p><strong>Notas variables:</strong> {{ period.variable_notes }}</p>
+                  }
+                </div>
+              }
+
+              <div class="aliquot-preview-details-grid">
+                <div class="summary-card">
+                  <div class="flex justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                      <span class="label"><i class="pi pi-receipt mr-1"></i>Gastos del período</span>
+                      <strong class="value-sm">{{ expenseItems.length }} registro(s)</strong>
+                    </div>
+                    <strong class="value">{{ (fixedSum + variableSum) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                  </div>
+                  <div class="period-detail-overview mb-3">
+                    <div>
+                      <span>Fijos</span>
+                      <strong>{{ fixedSum | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                    </div>
+                    <div>
+                      <span>Variables</span>
+                      <strong>{{ variableSum | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                    </div>
+                  </div>
+                  <p-table [value]="expenseItems" stripedRows styleClass="p-datatable-sm">
+                    <ng-template pTemplate="header">
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Categoría</th>
+                        <th>Tipo</th>
+                        <th class="text-right">Monto</th>
+                      </tr>
+                    </ng-template>
+                    <ng-template pTemplate="body" let-item>
+                      <tr>
+                        <td>{{ item.name }}</td>
+                        <td>{{ expenseCategoryLabel(item.category) }}</td>
+                        <td>{{ item.expenseType === 'FIXED' ? 'Fijo' : 'Variable' }}</td>
+                        <td class="text-right">{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                      </tr>
+                    </ng-template>
+                    <ng-template pTemplate="emptymessage">
+                      <tr><td colspan="4" class="text-center p-3 text-color-secondary">No hay gastos registrados.</td></tr>
+                    </ng-template>
+                  </p-table>
+                </div>
+
+                <div class="summary-card">
+                  <div class="flex justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                      <span class="label"><i class="pi pi-shield mr-1"></i>Provisiones financieras</span>
+                      <strong class="value-sm">{{ periodProvisions.length }} provisión(es)</strong>
+                    </div>
+                    <strong class="value">{{ period.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+                  </div>
+                  @if (periodProvisions.length > 0) {
+                    <p-table [value]="periodProvisions" stripedRows styleClass="p-datatable-sm">
+                      <ng-template pTemplate="header">
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Descripción</th>
+                          <th class="text-right">Monto</th>
+                        </tr>
+                      </ng-template>
+                      <ng-template pTemplate="body" let-provision>
+                        <tr>
+                          <td>{{ provision.name }}</td>
+                          <td>{{ provision.description || '—' }}</td>
+                          <td class="text-right">{{ provision.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                        </tr>
+                      </ng-template>
+                    </p-table>
+                  } @else {
+                    <p class="text-color-secondary text-sm">No se aplicaron provisiones en este período.</p>
+                  }
+                </div>
+              </div>
+            }
+          </section>
+
+          <section class="aliquot-preview-section">
+            <div class="aliquot-preview-section-head">
+              <div>
+                <span>Resultado</span>
+                <strong>Alícuotas a generar</strong>
+              </div>
+            </div>
+
+            @if (loadingAliquotPreview) {
+              <div class="receipt-state"><i class="pi pi-spin pi-spinner"></i> Calculando alícuotas…</div>
+            } @else {
+              @if (hasInvalidAliquotPreviewParticipation) {
+                <div class="receipt-warning">
+                  <i class="pi pi-exclamation-triangle"></i>
+                  La participación de propietarios activos debe sumar 100% antes de generar alícuotas.
+                </div>
+              }
+
+              <p-table [value]="aliquotPreviewRows" stripedRows styleClass="p-datatable-sm">
+                <ng-template pTemplate="header">
+                  <tr>
+                    <th>Depto.</th>
+                    <th>Propietario</th>
+                    <th class="text-right">Participación</th>
+                    <th class="text-right">Alícuota</th>
+                  </tr>
+                </ng-template>
+                <ng-template pTemplate="body" let-row>
+                  <tr>
+                    <td><strong>{{ row.apartmentNumber }}</strong></td>
+                    <td>{{ row.fullName }}</td>
+                    <td class="text-right">{{ row.participationPct | number:'1.2-2' }}%</td>
+                    <td class="text-right"><strong>{{ row.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</strong></td>
+                  </tr>
+                </ng-template>
+                <ng-template pTemplate="emptymessage">
+                  <tr><td colspan="4" class="text-center p-3 text-color-secondary">No hay propietarios activos para generar alícuotas.</td></tr>
+                </ng-template>
+              </p-table>
+            }
+          </section>
+        </div>
+      }
+
+      <ng-template pTemplate="footer">
+        <button pButton label="Cancelar" [outlined]="true" severity="secondary" (click)="showAliquotPreview = false"></button>
+        <button pButton label="Generar alícuotas" icon="pi pi-check" [loading]="generating"
+          [disabled]="!canConfirmAliquotPreview" (click)="generate()"></button>
+      </ng-template>
+    </p-dialog>
+
+    <p-dialog [(visible)]="showPeriodDetails" header="Detalles del período" [modal]="true"
+      [style]="{ width: '860px', maxWidth: '96vw' }" [draggable]="false">
+      @if (period) {
+        <div class="period-detail-dialog">
+          <div class="period-detail-overview">
+            <div>
+              <span>Período</span>
+              <strong>{{ monthName }} {{ period.year }}</strong>
+            </div>
+            <div>
+              <span>Estado</span>
+              <strong>{{ periodStatusLabel(period.status) }}</strong>
+            </div>
+            <div>
+              <span>Gastos operativos</span>
+              <strong>{{ period.total_expenses | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+            </div>
+            <div>
+              <span>Provisiones</span>
+              <strong>{{ period.total_provisions | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+            </div>
+            <div>
+              <span>Total general</span>
+              <strong>{{ ((period.grand_total || 0) > 0 ? period.grand_total : period.total_expenses) | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+            </div>
+          </div>
+
+          @if (period.notes || period.variable_notes) {
+            <div class="period-detail-notes">
+              @if (period.notes) {
+                <p><strong>Notas:</strong> {{ period.notes }}</p>
+              }
+              @if (period.variable_notes) {
+                <p><strong>Notas variables:</strong> {{ period.variable_notes }}</p>
+              }
+            </div>
+          }
+
+          <h4>Gastos del período</h4>
+          <p-table [value]="expenseItems" stripedRows styleClass="p-datatable-sm">
+            <ng-template pTemplate="header">
+              <tr>
+                <th>Nombre</th>
+                <th>Categoría</th>
+                <th>Tipo</th>
+                <th class="text-right">Monto</th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-item>
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ expenseCategoryLabel(item.category) }}</td>
+                <td>{{ item.expenseType === 'FIXED' ? 'Fijo' : 'Variable' }}</td>
+                <td class="text-right">{{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="emptymessage">
+              <tr><td colspan="4" class="text-center p-3 text-color-secondary">No hay gastos registrados.</td></tr>
+            </ng-template>
+          </p-table>
+
+          <h4>Provisiones financieras</h4>
+          @if (periodProvisions.length > 0) {
+            <p-table [value]="periodProvisions" stripedRows styleClass="p-datatable-sm">
+              <ng-template pTemplate="header">
+                <tr>
+                  <th>Nombre</th>
+                  <th>Descripción</th>
+                  <th class="text-right">Monto</th>
+                </tr>
+              </ng-template>
+              <ng-template pTemplate="body" let-provision>
+                <tr>
+                  <td>{{ provision.name }}</td>
+                  <td>{{ provision.description || '—' }}</td>
+                  <td class="text-right">{{ provision.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+                </tr>
+              </ng-template>
+            </p-table>
+          } @else {
+            <p class="text-color-secondary text-sm">No se aplicaron provisiones en este período.</p>
+          }
+        </div>
+      }
+    </p-dialog>
+
     <!-- Diálogo para registrar pago -->
     <p-dialog [(visible)]="showPaymentDialog" header="Registrar pago" [modal]="true" [style]="{width: '440px'}">
       @if (selectedPayment) {
@@ -170,7 +440,10 @@
             </span>
           }
           <span>Ya pagado: ${{ selectedPayment.amountPaid | number:'1.2-2' }}</span>
-          <span>Pendiente del período: <strong class="mora-txt">${{ periodPending(selectedPayment) | number:'1.2-2' }}</strong></span>
+          <span>
+            {{ isSelectedPeriodClosed ? 'Saldo en mora de este período' : 'Pendiente del período' }}:
+            <strong class="mora-txt">${{ periodPending(selectedPayment) | number:'1.2-2' }}</strong>
+          </span>
         </div>
 
         <form [formGroup]="paymentForm" (ngSubmit)="registerPayment()">
@@ -183,16 +456,24 @@
               <i class="pi pi-info-circle"></i>
               <div>
                 <strong>Este propietario tiene una mora de ${{ ownerMoraAvailable | number:'1.2-2' }}.</strong>
-                <span>El pago se aplicará primero a la mora, desde el período más antiguo hasta el más reciente.</span>
+                <span>
+                  {{ isSelectedPeriodClosed
+                    ? 'El período está cerrado; este pago se registrará únicamente como abono a mora.'
+                    : 'El pago se aplicará primero a la mora, desde el período más antiguo hasta el más reciente.' }}
+                </span>
                 @if (enteredPaymentAmount > 0) {
                   <span>Se abonarán ${{ moraToApply | number:'1.2-2' }} a mora; su saldo quedará en ${{ finalMoraAfterPayment | number:'1.2-2' }}.</span>
-                  @if (amountForCurrentPeriod > 0) {
+                  @if (!isSelectedPeriodClosed && amountForCurrentPeriod > 0) {
                     <span>El remanente de ${{ amountForCurrentPeriod | number:'1.2-2' }} se registrará en el período actual.</span>
-                  } @else {
+                  } @else if (!isSelectedPeriodClosed) {
                     <span>Con este monto todavía no se abonará al período actual.</span>
                   }
                   @if (!paymentAmountAllowed) {
-                    <small>El monto supera la suma de la mora y el saldo pendiente de este período. Reduce el valor para continuar.</small>
+                    <small>
+                      {{ isSelectedPeriodClosed
+                        ? 'El monto supera la mora disponible. Reduce el valor para continuar.'
+                        : 'El monto supera la suma de la mora y el saldo pendiente de este período. Reduce el valor para continuar.' }}
+                    </small>
                   }
                 }
               </div>
@@ -235,6 +516,7 @@
 
     <!-- Vista previa del comprobante sin salir de la pantalla -->
     <p-dialog [(visible)]="showProofPreview" header="Comprobante de pago" [modal]="true"
+      (onHide)="clearProofPreview()"
       [style]="{ width: '900px', maxWidth: '96vw' }" [draggable]="false">
       @if (proofPreviewUrl) {
         <div class="proof-preview">
@@ -244,6 +526,51 @@
             <img [src]="proofPreviewUrl" alt="Comprobante de pago" />
           }
         </div>
+      }
+    </p-dialog>
+
+    <p-dialog [(visible)]="showPaymentRecordsDialog" header="Pagos registrados" [modal]="true"
+      [style]="{ width: '860px', maxWidth: '96vw' }" [draggable]="false">
+      @if (selectedPaymentRecordsPayment) {
+        <div class="payment-records-owner">
+          <div>
+            <strong>Depto. {{ selectedPaymentRecordsPayment.owner?.apartmentNumber }}</strong>
+            <span>{{ selectedPaymentRecordsPayment.owner?.fullName }}</span>
+          </div>
+          <div>
+            <span>Total pagado</span>
+            <strong>{{ selectedPaymentRecordsPayment.amountPaid | currency:'USD':'symbol-narrow':'1.2-2' }}</strong>
+          </div>
+        </div>
+        <p-table [value]="selectedPaymentRecordsPayment.paymentRecords || []" stripedRows styleClass="p-datatable-sm">
+          <ng-template pTemplate="header">
+            <tr>
+              <th>Fecha</th>
+              <th>Origen</th>
+              <th>Total comprobante</th>
+              <th>Aplicado a mora</th>
+              <th>Aplicado al período</th>
+              <th>Comprobante</th>
+            </tr>
+          </ng-template>
+          <ng-template pTemplate="body" let-record>
+            <tr>
+              <td>{{ record.paymentDate | date:'dd/MM/yy' }}</td>
+              <td>{{ paymentRecordLabel(record) }}</td>
+              <td>{{ record.amount | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+              <td>{{ record.amountForMora | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+              <td>{{ record.amountForPeriod | currency:'USD':'symbol-narrow':'1.2-2' }}</td>
+              <td>
+                @if (record.proofUrl) {
+                  <button pButton label="Ver" icon="pi pi-paperclip" [text]="true" size="small"
+                    (click)="openProofPreviewUrl(record.proofUrl)"></button>
+                } @else {
+                  <span class="text-color-secondary text-sm">Pendiente</span>
+                }
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
       }
     </p-dialog>
 
@@ -314,6 +641,11 @@
                       </div>
                     </div>
                     <div class="receipt-actions">
+                      @if (canPreviewReceipt(receipt)) {
+                        <button pButton icon="pi pi-eye" [rounded]="true" [text]="true" size="small"
+                          severity="info" (click)="openBulkReceiptPreview(receipt)"
+                          pTooltip="Previsualizar comprobante" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"></button>
+                      }
                       @if (receipt.status !== 'scanning' && receipt.status !== 'confirming' && receipt.status !== 'confirmed') {
                         <button pButton icon="pi pi-refresh" [rounded]="true" [text]="true" size="small"
                           severity="secondary" (click)="retryReceiptOcr(receipt)"
@@ -348,6 +680,18 @@
                           <span>Confianza: {{ ((ocrConfidence(receipt) ?? 0) * 100) | number:'1.0-0' }}%</span>
                         }
                       </div>
+                      <div class="receipt-read-data">
+                        <span>
+                          <i class="pi pi-dollar"></i>
+                          Monto leído:
+                          <strong>{{ receipt.amount ? (receipt.amount | currency:'USD':'symbol-narrow':'1.2-2') : 'No detectado' }}</strong>
+                        </span>
+                        <span>
+                          <i class="pi pi-calendar"></i>
+                          Fecha leída:
+                          <strong>{{ receiptReadDate(receipt) || 'No detectada' }}</strong>
+                        </span>
+                      </div>
 
                       @if (receipt.showManualAssignment) {
                         <div class="receipt-match manual-assignment">
@@ -357,19 +701,38 @@
                             <span>El archivo seguirá sin subir hasta que confirmes estos datos.</span>
                           </div>
                           <div class="manual-step-grid">
-                            <label class="manual-field"><span>1. Período</span><select [(ngModel)]="receipt.manualPeriodId" (ngModelChange)="onManualPeriodSelected(receipt)">
-                              <option [ngValue]="undefined">Selecciona el período</option>
-                              @for (manualPeriod of manualPeriods; track manualPeriod.id) {
-                                <option [value]="manualPeriod.id">{{ periodLabel(manualPeriod) }}</option>
-                              }
-                            </select></label>
+                            <label class="manual-field">
+                              <span>1. Período</span>
+                              <p-dropdown
+                                [(ngModel)]="receipt.manualPeriodId"
+                                [options]="manualPeriodOptions"
+                                optionLabel="label"
+                                optionValue="id"
+                                [filter]="true"
+                                filterBy="label,month,year"
+                                placeholder="Selecciona el período"
+                                styleClass="w-full"
+                                [appendTo]="'body'"
+                                (ngModelChange)="onManualPeriodSelected(receipt)"
+                              />
+                            </label>
                             @if (receipt.manualPeriod) {
-                              <label class="manual-field"><span>2. Departamento</span><select [(ngModel)]="receipt.manualPaymentId" (ngModelChange)="onManualPaymentSelected(receipt)">
-                                <option [ngValue]="undefined">Selecciona el departamento</option>
-                                @for (payment of receipt.manualPeriod.payments || []; track payment.id) {
-                                  <option [value]="payment.id" [disabled]="payment.status === 'PAID'">{{ payment.owner?.apartmentNumber }} — {{ payment.owner?.fullName }}</option>
-                                }
-                              </select></label>
+                              <label class="manual-field">
+                                <span>2. Departamento</span>
+                                <p-dropdown
+                                  [(ngModel)]="receipt.manualPaymentId"
+                                  [options]="manualPaymentOptions(receipt)"
+                                  optionLabel="label"
+                                  optionValue="id"
+                                  optionDisabled="disabled"
+                                  [filter]="true"
+                                  filterBy="label,apartmentNumber,fullName"
+                                  placeholder="Buscar propietario o departamento"
+                                  styleClass="w-full"
+                                  [appendTo]="'body'"
+                                  (ngModelChange)="onManualPaymentSelected(receipt)"
+                                />
+                              </label>
                             }
                           </div>
                           @if (loadingManualPeriods) { <small class="text-color-secondary"><i class="pi pi-spin pi-spinner"></i> Cargando períodos…</small> }
@@ -379,6 +742,34 @@
                               <strong>{{ periodLabel(receipt.manualPeriod) }} · Depto. {{ receipt.manualMatch.owner.apartmentNumber }}</strong>
                               <span>{{ receipt.manualMatch.owner.fullName }} · Saldo pendiente: {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                             </div>
+                            @if (receiptHasMoraPriority(receipt)) {
+                              <div class="mora-application">
+                                <i class="pi pi-info-circle"></i>
+                                <div>
+                                  <strong>Este propietario tiene una mora de {{ receiptOwnerMoraAvailable(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}.</strong>
+                                  <span>
+                                    {{ receiptTargetPeriodClosed(receipt)
+                                      ? 'El período está cerrado; este pago se registrará únicamente como abono a mora.'
+                                      : 'El pago se aplicará primero a la mora, desde el período más antiguo hasta el más reciente.' }}
+                                  </span>
+                                  @if (receiptEnteredPaymentAmount(receipt) > 0) {
+                                    <span>Se abonarán {{ receiptMoraToApply(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }} a mora; su saldo quedará en {{ receiptFinalMoraAfterPayment(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}.</span>
+                                    @if (!receiptTargetPeriodClosed(receipt) && receiptAmountForCurrentPeriod(receipt) > 0) {
+                                      <span>El remanente de {{ receiptAmountForCurrentPeriod(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }} se registrará en el período seleccionado.</span>
+                                    } @else if (!receiptTargetPeriodClosed(receipt)) {
+                                      <span>Con este monto todavía no se abonará al período seleccionado.</span>
+                                    }
+                                    @if (!receiptPaymentAmountAllowed(receipt)) {
+                                      <small>
+                                        {{ receiptTargetPeriodClosed(receipt)
+                                          ? 'El monto supera la mora disponible. Reduce el valor para continuar.'
+                                          : 'El monto supera la suma de la mora y el saldo pendiente de este período. Reduce el valor para continuar.' }}
+                                      </small>
+                                    }
+                                  }
+                                </div>
+                              </div>
+                            }
                             <div class="manual-confirm-grid">
                               <label class="manual-field"><span>3. Valor del comprobante</span><p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" inputStyleClass="text-right" /></label>
                               <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
@@ -394,6 +785,34 @@
                             <strong>{{ periodLabel(period) }} · Depto. {{ receipt.match.owner.apartmentNumber }}</strong>
                             <span>{{ receipt.match.owner.fullName }} · Alícuota {{ receipt.match.aliquotAmount | currency:'USD':'symbol-narrow':'1.2-2' }} · Pendiente {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                           </div>
+                          @if (receiptHasMoraPriority(receipt)) {
+                            <div class="mora-application">
+                              <i class="pi pi-info-circle"></i>
+                              <div>
+                                <strong>Este propietario tiene una mora de {{ receiptOwnerMoraAvailable(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}.</strong>
+                                <span>
+                                  {{ receiptTargetPeriodClosed(receipt)
+                                    ? 'El período está cerrado; este pago se registrará únicamente como abono a mora.'
+                                    : 'El pago se aplicará primero a la mora, desde el período más antiguo hasta el más reciente.' }}
+                                </span>
+                                @if (receiptEnteredPaymentAmount(receipt) > 0) {
+                                  <span>Se abonarán {{ receiptMoraToApply(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }} a mora; su saldo quedará en {{ receiptFinalMoraAfterPayment(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}.</span>
+                                  @if (!receiptTargetPeriodClosed(receipt) && receiptAmountForCurrentPeriod(receipt) > 0) {
+                                    <span>El remanente de {{ receiptAmountForCurrentPeriod(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }} se registrará en el período actual.</span>
+                                  } @else if (!receiptTargetPeriodClosed(receipt)) {
+                                    <span>Con este monto todavía no se abonará al período actual.</span>
+                                  }
+                                  @if (!receiptPaymentAmountAllowed(receipt)) {
+                                    <small>
+                                      {{ receiptTargetPeriodClosed(receipt)
+                                        ? 'El monto supera la mora disponible. Reduce el valor para continuar.'
+                                        : 'El monto supera la suma de la mora y el saldo pendiente de este período. Reduce el valor para continuar.' }}
+                                    </small>
+                                  }
+                                }
+                              </div>
+                            </div>
+                          }
                           @if (receipt.suggestedByAmount) {
                             <span class="receipt-warning"><i class="pi pi-info-circle"></i> No se encontró coincidencia por nombre. Confirma que el valor del pago corresponde a este departamento.</span>
                           }
@@ -439,6 +858,11 @@
           <strong>Depto. {{ selectedPayment.owner?.apartmentNumber }}</strong>
           — {{ selectedPayment.owner?.fullName }}
         </div>
+        @if (period?.status === 'CLOSED') {
+          <div class="receipt-warning">
+            <i class="pi pi-lock"></i> El período está cerrado. Los cargos extra solo se pueden consultar.
+          </div>
+        }
 
         <!-- Lista de extras existentes -->
         @if (selectedPayment.extras.length > 0) {
@@ -461,7 +885,7 @@
                 <div class="extra-item-row">
                   <span class="extra-item-amount">${{ extra.amount | number:'1.2-2' }}</span>
                   <span class="extra-item-notes flex-1">{{ extra.notes }}</span>
-                  @if (selectedPayment.status !== 'PAID') {
+                  @if (canManageExtras) {
                     <button pButton icon="pi pi-pencil" [text]="true" [rounded]="true" size="small"
                       severity="info" (click)="startEditExtra(extra)" pTooltip="Editar"></button>
                     <button pButton icon="pi pi-trash" [text]="true" [rounded]="true" size="small"
@@ -480,8 +904,8 @@
           <p class="text-color-secondary text-sm mt-2">Sin cargos extras aún.</p>
         }
 
-        <!-- Formulario nuevo extra (solo si no está PAID) -->
-        @if (selectedPayment.status !== 'PAID') {
+        <!-- Formulario nuevo extra (solo si el período está abierto y no está PAID) -->
+        @if (canManageExtras) {
           <div class="extra-add-section">
             <h4 class="extra-add-title"><i class="pi pi-plus-circle mr-1"></i>Nuevo cargo</h4>
             <div class="extra-add-row">

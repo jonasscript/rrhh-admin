@@ -35,8 +35,8 @@
                 class="pay-mora-btn" (click)="openMoraPayment(owner)"></button>
             </td>
             <td>
-              @if ((owner.overduePeriods || 0) > 0) {
-                <button pButton [label]="owner.overduePeriods + ' período(s)'" icon="pi pi-list"
+              @if ((owner.overduePeriods || 0) > 0 || (owner.moraPayments?.length || 0) > 0) {
+                <button pButton [label]="(owner.overduePeriods || 0) + ' período(s) / ' + (owner.moraPayments?.length || 0) + ' abono(s)'" icon="pi pi-list"
                   [text]="true" size="small" class="debt-periods-btn" (click)="openDebtPeriods(owner)"></button>
               } @else {
                 <span class="text-color-secondary">0 período(s)</span>

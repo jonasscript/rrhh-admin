@@ -6,6 +6,16 @@ const MONTHS_ES = [
 ];
 
 const fmt = (n) => `$${parseFloat(n || 0).toFixed(2)}`;
+const roundMoney = (n) => Math.round((parseFloat(n || 0)) * 100) / 100;
+const actualProvisionSavings = (expectedProvision, totalCollected, totalOperatingExpenses) => {
+  const expected = parseFloat(expectedProvision) || 0;
+  if (expected <= 0) return 0;
+  const availableAfterExpenses = Math.max(
+    0,
+    (parseFloat(totalCollected) || 0) - (parseFloat(totalOperatingExpenses) || 0),
+  );
+  return roundMoney(Math.min(expected, availableAfterExpenses));
+};
 
 /**
  * Genera un PDF de rol de pagos.
@@ -210,17 +220,34 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
       const totalBilled = parseFloat(p.total_billed) || 0;
       const totalCollected = parseFloat(p.total_collected) || 0;
       const totalExpenses = parseFloat(p.total_expenses) || 0;
+      const totalAdminExpenses = Array.isArray(p.admin_expenses)
+        ? p.admin_expenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+        : 0;
+      const totalOperatingExpenses = totalExpenses + totalAdminExpenses;
       const totalProvisions = parseFloat(p.total_provisions) || 0;
+      const realProvisionSavings = actualProvisionSavings(totalProvisions, totalCollected, totalOperatingExpenses);
       return {
         billed: acc.billed + totalBilled,
         collected: acc.collected + totalCollected,
         expenses: acc.expenses + totalExpenses,
-        provisions: acc.provisions + totalProvisions,
-        result: acc.result + (totalCollected - totalExpenses),
+        adminExpenses: acc.adminExpenses + totalAdminExpenses,
+        operatingExpenses: acc.operatingExpenses + totalOperatingExpenses,
+        expectedProvisions: acc.expectedProvisions + totalProvisions,
+        actualProvisionSavings: acc.actualProvisionSavings + realProvisionSavings,
+        result: acc.result + (totalCollected - totalOperatingExpenses),
       };
-    }, { billed: 0, collected: 0, expenses: 0, provisions: 0, result: 0 });
+    }, {
+      billed: 0,
+      collected: 0,
+      expenses: 0,
+      adminExpenses: 0,
+      operatingExpenses: 0,
+      expectedProvisions: 0,
+      actualProvisionSavings: 0,
+      result: 0,
+    });
     totals.pending = Math.max(0, totals.billed - totals.collected);
-    totals.accrualResult = totals.billed - totals.expenses;
+    totals.pendingProvisionSavings = Math.max(0, totals.expectedProvisions - totals.actualProvisionSavings);
 
     // Encabezado
     doc.fontSize(16).fillColor('#1e40af').text('INFORME FINANCIERO DEL CONDOMINIO', { align: 'center' });
@@ -230,20 +257,21 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
     balanceDivider(doc, '#94a3b8');
 
     balanceHeading(doc, 'BALANCE GENERAL DEL PERIODO');
-    balanceRow(doc, 'Ingresos facturados', fmt(totals.billed));
+    balanceRow(doc, 'Alícuotas generadas', fmt(totals.billed));
     balanceRow(doc, 'Ingresos cobrados', fmt(totals.collected), { color: '#16a34a' });
     balanceRow(doc, 'Pendiente del periodo consultado', fmt(totals.pending), { color: '#dc2626' });
     doc.moveDown(0.2);
-    balanceRow(doc, 'Gastos operativos', fmt(totals.expenses));
-    balanceRow(doc, 'Total provisionado (ahorrado)', fmt(totals.provisions), { color: '#475569' });
-    balanceRow(doc, 'Total gastos reales', fmt(totals.expenses), { bold: true });
+    balanceRow(doc, 'Gastos de períodos', fmt(totals.expenses));
+    balanceRow(doc, 'Gastos administrativos', fmt(totals.adminExpenses));
+    balanceRow(doc, 'Total gastos reales', fmt(totals.operatingExpenses), { bold: true });
+    doc.moveDown(0.2);
+    balanceRow(doc, 'Provisión esperada del periodo', fmt(totals.expectedProvisions), { color: '#475569' });
+    balanceRow(doc, 'Ahorro real después de gastos', fmt(totals.actualProvisionSavings), { color: '#16a34a' });
+    balanceRow(doc, 'Provisión pendiente por cubrir', fmt(totals.pendingProvisionSavings), { color: totals.pendingProvisionSavings > 0 ? '#dc2626' : '#64748b' });
     doc.moveDown(0.2);
     balanceRow(doc, 'Resultado de caja', `${totals.result >= 0 ? '+' : ''}${fmt(totals.result)}`, {
       bold: true,
       color: totals.result >= 0 ? '#16a34a' : '#dc2626',
-    });
-    balanceRow(doc, 'Resultado devengado', `${totals.accrualResult >= 0 ? '+' : ''}${fmt(totals.accrualResult)}`, {
-      color: totals.accrualResult >= 0 ? '#16a34a' : '#dc2626',
     });
     balanceRow(doc, 'Mora por cobrar', fmt(totalMora), { bold: true, color: '#dc2626' });
     doc.moveDown(0.5);
@@ -255,11 +283,15 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
       const total_collected = parseFloat(p.total_collected) || 0;
       const total_expenses  = parseFloat(p.total_expenses) || 0;
       const total_provisions= parseFloat(p.total_provisions) || 0;
-      const balance         = Math.round((total_collected - total_expenses) * 100) / 100;
+      const adminExpenses   = Array.isArray(p.admin_expenses) ? p.admin_expenses : [];
+      const total_admin_expenses = adminExpenses.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+      const total_operating_expenses = Math.round((total_expenses + total_admin_expenses) * 100) / 100;
+      const balance         = Math.round((total_collected - total_operating_expenses) * 100) / 100;
       const expenseItems    = Array.isArray(p.expense_items) ? p.expense_items : [];
       const provisions      = Array.isArray(p.provisions) ? p.provisions : [];
       const pending         = Math.max(0, total_billed - total_collected);
-      const accrualBalance  = Math.round((total_billed - total_expenses) * 100) / 100;
+      const realProvisionSavings = actualProvisionSavings(total_provisions, total_collected, total_operating_expenses);
+      const pendingProvisionSavings = Math.max(0, total_provisions - realProvisionSavings);
       cumulative           += balance;
 
       ensureSpace(190);
@@ -268,13 +300,13 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
 
       doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Ingresos', 50);
       doc.moveDown(0.2);
-      balanceRow(doc, 'Facturado', fmt(total_billed), { indent: 10 });
+      balanceRow(doc, 'Alícuotas generadas', fmt(total_billed), { indent: 10 });
       balanceRow(doc, 'Cobrado', fmt(total_collected), { indent: 10, color: '#16a34a' });
       balanceRow(doc, 'Por cobrar del periodo', fmt(pending), { indent: 10, color: pending > 0 ? '#dc2626' : '#64748b' });
 
       ensureSpace(50);
       doc.moveDown(0.1);
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Gastos operativos', 50);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Gastos de períodos', 50);
       doc.moveDown(0.2);
       if (expenseItems.length) {
         for (const item of expenseItems) {
@@ -288,11 +320,29 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
       } else {
         balanceRow(doc, 'Gastos operativos sin desglose', fmt(total_expenses), { indent: 20, labelColor: '#64748b' });
       }
-      balanceRow(doc, 'Total gastos operativos', fmt(total_expenses), { bold: true, indent: 10 });
+      balanceRow(doc, 'Total gastos de períodos', fmt(total_expenses), { bold: true, indent: 10 });
 
       ensureSpace(50);
       doc.moveDown(0.1);
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Provisiones ahorradas', 50);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Gastos administrativos reales', 50);
+      doc.moveDown(0.2);
+      if (adminExpenses.length) {
+        for (const item of adminExpenses) {
+          ensureSpace(24);
+          balanceRow(doc, item.description || item.vendor || 'Gasto administrativo', fmt(parseFloat(item.amount) || 0), {
+            indent: 20,
+            note: item.vendor || item.category || '',
+            labelColor: '#475569',
+          });
+        }
+      } else {
+        balanceRow(doc, 'Sin gastos administrativos registrados', fmt(0), { indent: 20, labelColor: '#64748b' });
+      }
+      balanceRow(doc, 'Total gastos administrativos', fmt(total_admin_expenses), { bold: true, indent: 10 });
+
+      ensureSpace(50);
+      doc.moveDown(0.1);
+      doc.font('Helvetica-Bold').fontSize(9).fillColor('#334155').text('Provisión esperada y ahorro real', 50);
       doc.moveDown(0.2);
       if (provisions.length) {
         for (const provision of provisions) {
@@ -303,19 +353,21 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
           });
         }
       } else {
-        balanceRow(doc, 'Provisionado sin desglose', fmt(total_provisions), { indent: 20, labelColor: '#64748b' });
+        balanceRow(doc, 'Meta de provisión sin desglose', fmt(total_provisions), { indent: 20, labelColor: '#64748b' });
       }
-      balanceRow(doc, 'Total provisionado (ahorrado)', fmt(total_provisions), { bold: true, indent: 10 });
+      balanceRow(doc, 'Meta total de provisión', fmt(total_provisions), { bold: true, indent: 10 });
+      balanceRow(doc, 'Ahorro real después de gastos', fmt(realProvisionSavings), { bold: true, indent: 10, color: '#16a34a' });
+      balanceRow(doc, 'Pendiente de ahorro por cubrir', fmt(pendingProvisionSavings), {
+        indent: 10,
+        color: pendingProvisionSavings > 0 ? '#dc2626' : '#64748b',
+      });
 
       doc.moveDown(0.1);
       balanceDivider(doc, '#e2e8f0');
-      balanceRow(doc, 'Total gastos reales', fmt(total_expenses), { bold: true });
+      balanceRow(doc, 'Total gastos reales', fmt(total_operating_expenses), { bold: true });
       balanceRow(doc, 'Resultado de caja del periodo', `${balance >= 0 ? '+' : ''}${fmt(balance)}`, {
         bold: true,
         color: balance >= 0 ? '#16a34a' : '#dc2626',
-      });
-      balanceRow(doc, 'Resultado devengado del periodo', `${accrualBalance >= 0 ? '+' : ''}${fmt(accrualBalance)}`, {
-        color: accrualBalance >= 0 ? '#16a34a' : '#dc2626',
       });
       balanceRow(doc, 'Resultado acumulado de caja', `${cumulative >= 0 ? '+' : ''}${fmt(cumulative)}`, {
         color: cumulative >= 0 ? '#16a34a' : '#dc2626',
@@ -355,10 +407,12 @@ const generateShiftSchedulePdf = ({ startDate, endDate, assignments }) =>
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const roleFor = (assignment) => {
       const name = normalize(assignment.shift_name);
+      const start = String(assignment.start_time || '').slice(0, 5);
+      const end = String(assignment.end_time || '').slice(0, 5);
       if (name.includes('descanso')) return 'DESCANSO';
-      if (name.includes('nocturno') || name.includes('noche')) return 'NOCHE';
-      if (name.includes('vespertino') || name.includes('tarde')) return 'TARDE';
-      if (name.includes('diurno') || name.includes('manana')) return 'MAÑANA';
+      if (name.includes('nocturno') || name.includes('noche') || (start === '21:00' && end === '07:00')) return 'NOCHE';
+      if (name.includes('vespertino') || name.includes('tarde') || (start === '15:00' && end === '21:00')) return 'TARDE';
+      if (name.includes('diurno') || name.includes('manana') || (start === '07:00' && end === '15:00')) return 'MAÑANA';
       return String(assignment.shift_name || 'TURNO').toUpperCase();
     };
     const roleOrder = ['MAÑANA', 'TARDE', 'NOCHE', 'DESCANSO'];
@@ -368,8 +422,12 @@ const generateShiftSchedulePdf = ({ startDate, endDate, assignments }) =>
       ...foundRoles.filter((role) => !roleOrder.includes(role)),
     ];
     const byDateAndRole = new Map();
+    const toDateKey = (value) => {
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      return String(value || '').slice(0, 10);
+    };
     for (const assignment of assignments) {
-      const key = `${String(assignment.date).slice(0, 10)}|${roleFor(assignment)}`;
+      const key = `${toDateKey(assignment.date)}|${roleFor(assignment)}`;
       if (!byDateAndRole.has(key)) byDateAndRole.set(key, assignment);
     }
 
