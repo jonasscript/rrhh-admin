@@ -60,10 +60,10 @@ const registerApiRoutes = (base) => {
 };
 
 registerApiRoutes('/api/v1');
-registerApiRoutes('/habbita-api/api/v1');
-registerApiRoutes('/habbita-api');
-// registerApiRoutes('/porton_del_rio_api/api/v1');
-// registerApiRoutes('/porton_del_rio_api');
+// registerApiRoutes('/habbita-api/api/v1');
+// registerApiRoutes('/habbita-api');
+registerApiRoutes('/porton_del_rio_api/api/v1');
+registerApiRoutes('/porton_del_rio_api');
 registerApiRoutes('');
 
 // ── Health check ──────────────────────────────────────────────
@@ -71,16 +71,16 @@ app.get([
   '/',
   '/health',
   '/api/v1',
-  '/habbita-api',
-  '/habbita-api/',
-  '/habbita-api/health',
-  '/habbita-api/api/v1',
-  '/habbita-api/api/v1/health',
-  // '/porton_del_rio_api',
-  // '/porton_del_rio_api/',
-  // '/porton_del_rio_api/health',
-  // '/porton_del_rio_api/api/v1',
-  // '/porton_del_rio_api/api/v1/health',
+  // '/habbita-api',
+  // '/habbita-api/',
+  // '/habbita-api/health',
+  // '/habbita-api/api/v1',
+  // '/habbita-api/api/v1/health',
+  '/porton_del_rio_api',
+  '/porton_del_rio_api/',
+  '/porton_del_rio_api/health',
+  '/porton_del_rio_api/api/v1',
+  '/porton_del_rio_api/api/v1/health',
 // ], (_req, res) => res.json({ status: 'ok', name: 'PORTON DEL RIO API' }));
 ], (_req, res) => res.json({ status: 'ok', name: 'PORTON DEL RIO API' }));
 
