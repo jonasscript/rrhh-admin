@@ -138,11 +138,11 @@
                   {{ item.amount | currency:'USD':'symbol-narrow':'1.2-2' }}
                 </span>
               } @else {
-                <p-inputNumber
+                <input pInputText type="number"
                   [(ngModel)]="item.amount"
-                  [min]="0" [minFractionDigits]="2" [maxFractionDigits]="2"
-                  prefix="$" [disabled]="!item.selected"
-                  styleClass="amount-input" inputStyleClass="text-right"
+                  min="0" step="0.01"
+                  [disabled]="!item.selected"
+                  class="amount-input text-right"
                 />
               }
             </div>
@@ -172,10 +172,10 @@
             [options]="typeOptions" optionLabel="label" optionValue="value"
             styleClass="adhoc-type"
           />
-          <p-inputNumber
+          <input pInputText type="number"
             [(ngModel)]="item.amount"
-            [min]="0" [minFractionDigits]="2" prefix="$"
-            styleClass="amount-input" inputStyleClass="text-right"
+            min="0" step="0.01"
+            class="amount-input text-right"
           />
           <button pButton icon="pi pi-times" [text]="true" [rounded]="true"
             severity="danger" class="p-button-sm" (click)="removeAdHoc(i)"></button>
@@ -235,11 +235,11 @@
 
               @if (p.calc_type === 'VARIABLE') {
                 <!-- VARIABLE: el usuario ingresa el monto en este período -->
-                <p-inputNumber
+                <input pInputText type="number"
                   [(ngModel)]="p.customValue"
-                  [min]="0" [minFractionDigits]="2" [maxFractionDigits]="2"
-                  prefix="$" [disabled]="!p.selected"
-                  styleClass="amount-input" inputStyleClass="text-right"
+                  min="0" step="0.01"
+                  [disabled]="!p.selected"
+                  class="amount-input text-right"
                 />
               } @else {
                 <span class="amount-fixed" [class.amount-dim]="!p.selected">
@@ -387,7 +387,7 @@
                           <span>{{ receipt.manualMatch.owner.fullName }} · Saldo pendiente: {{ pendingAmount(receipt) | currency:'USD':'symbol-narrow':'1.2-2' }}</span>
                         </div>
                         <div class="manual-confirm-grid">
-                          <label class="manual-field"><span>3. Valor del comprobante</span><p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" inputStyleClass="text-right" /></label>
+                          <label class="manual-field"><span>3. Valor del comprobante</span><input pInputText type="number" [(ngModel)]="receipt.amount" min="0.01" step="0.01" class="text-right" /></label>
                           <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
                           <button pButton icon="pi pi-check" label="Confirmar registro" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
                         </div>
@@ -405,8 +405,8 @@
                         <span class="receipt-warning"><i class="pi pi-info-circle"></i> Esta alícuota ya está pagada.</span>
                       } @else {
                         <div class="receipt-values">
-                          <p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2"
-                            prefix="$" placeholder="Valor detectado" inputStyleClass="text-right" />
+                          <input pInputText type="number" [(ngModel)]="receipt.amount" min="0.01" step="0.01"
+                            placeholder="Valor detectado" class="text-right" />
                           <input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" class="receipt-date" />
                           @if (!receipt.amount) {
                             <small class="receipt-warning">OCR no detectó el valor: ingrésalo para confirmar.</small>

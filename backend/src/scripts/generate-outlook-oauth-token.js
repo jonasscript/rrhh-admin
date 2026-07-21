@@ -7,7 +7,7 @@ const clientId = process.env.EMAIL_OAUTH2_CLIENT_ID;
 const clientSecret = process.env.EMAIL_OAUTH2_CLIENT_SECRET;
 const tenant = process.env.EMAIL_OAUTH2_TENANT || 'consumers';
 const redirectUri = process.env.EMAIL_OAUTH2_REDIRECT_URI || 'http://localhost:3002/outlook-oauth2/callback';
-const scope = 'offline_access https://outlook.office.com/SMTP.Send';
+const scope = process.env.EMAIL_OAUTH2_SCOPE || 'offline_access https://graph.microsoft.com/Mail.Send';
 
 if (!clientId || !clientSecret) {
   console.error('Faltan EMAIL_OAUTH2_CLIENT_ID o EMAIL_OAUTH2_CLIENT_SECRET en el archivo .env.');

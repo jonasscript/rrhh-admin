@@ -8,7 +8,6 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { InputNumberModule } from 'primeng/inputnumber';
 import { CalendarModule } from 'primeng/calendar';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -69,7 +68,7 @@ interface AliquotPreviewRow {
   selector: 'app-condo-period-detail',
   standalone: true,
   imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule,
-    TableModule, ButtonModule, DialogModule, InputTextModule, InputNumberModule,
+    TableModule, ButtonModule, DialogModule, InputTextModule,
     CalendarModule, TagModule, TooltipModule, ToastModule, ConfirmDialogModule,
     FileUploadModule, ImageModule, InputTextareaModule, DropdownModule, MenuModule],
   providers: [MessageService, ConfirmationService],
@@ -90,6 +89,7 @@ export class CondoPeriodDetailComponent implements OnInit, OnDestroy {
   expenseItems: CondoPeriodExpenseItem[] = [];
   loading = false; generating = false; sending = false; closing = false;
   saving = false; uploadingProof = false; deletingProof = false;
+  sendingPaymentId: string | null = null;
 
   showPaymentDialog = false;
   showProofDialog   = false;
@@ -125,7 +125,7 @@ export class CondoPeriodDetailComponent implements OnInit, OnDestroy {
   savingExtra   = false;
   deletingExtra: string | null = null;  // ID del extra que se está borrando
   editingExtra:  PaymentExtra | null = null;
-  newExtraAmount = 0;
+  newExtraAmount: number | null = null;
   newExtraNotes  = '';
   editExtraAmount = 0;
   editExtraNotes  = '';
@@ -368,8 +368,46 @@ export class CondoPeriodDetailComponent implements OnInit, OnDestroy {
     if (!this.period) return;
     this.sending = true;
     this.svc.sendAliquotEmails(this.period.id).subscribe({
-      next: (r) => { this.msg.add({ severity: 'success', summary: `${(r as any).sent} correos enviados`, detail: '' }); this.sending = false; },
-      error: () => this.sending = false,
+      next: (r) => {
+        const skipped = r.skippedWithoutEmail || 0;
+        this.msg.add({
+          severity: 'success',
+          summary: `${r.sent} correos enviados`,
+          detail: skipped ? `${skipped} propietario(s) sin correo registrado.` : '',
+        });
+        this.sending = false;
+      },
+      error: err => {
+        this.sending = false;
+        this.msg.add({
+          severity: 'error',
+          summary: 'No se pudieron enviar los correos',
+          detail: err.error?.message || 'Revisa la configuración SMTP/OAuth2 de Outlook.',
+        });
+      },
+    });
+  }
+
+  sendEmailToPayment(payment: AliquotPayment) {
+    if (!this.period || this.sendingPaymentId || !payment.owner?.email) return;
+    this.sendingPaymentId = payment.id;
+    this.svc.sendAliquotEmail(this.period.id, payment.id).subscribe({
+      next: r => {
+        this.msg.add({
+          severity: 'success',
+          summary: 'Correo enviado',
+          detail: `Depto. ${r.unitNumber} — ${r.ownerEmail}`,
+        });
+        this.sendingPaymentId = null;
+      },
+      error: err => {
+        this.sendingPaymentId = null;
+        this.msg.add({
+          severity: 'error',
+          summary: 'No se pudo enviar el correo',
+          detail: err.error?.message || 'Revisa la configuración SMTP/OAuth2 de Outlook.',
+        });
+      },
     });
   }
 
@@ -1027,18 +1065,19 @@ export class CondoPeriodDetailComponent implements OnInit, OnDestroy {
   openExtraDialog(payment: AliquotPayment) {
     this.selectedPayment  = payment;
     this.editingExtra     = null;
-    this.newExtraAmount   = 0;
+    this.newExtraAmount   = null;
     this.newExtraNotes    = '';
     this.showExtraDialog  = true;
   }
 
   addExtra() {
-    if (!this.selectedPayment || !this.canManageExtras || this.newExtraAmount <= 0 || !this.newExtraNotes.trim()) return;
+    const amount = Number(this.newExtraAmount || 0);
+    if (!this.selectedPayment || !this.canManageExtras || amount <= 0 || !this.newExtraNotes.trim()) return;
     this.savingExtra = true;
-    this.svc.addPaymentExtra(this.selectedPayment.id, this.newExtraAmount, this.newExtraNotes.trim()).subscribe({
+    this.svc.addPaymentExtra(this.selectedPayment.id, amount, this.newExtraNotes.trim()).subscribe({
       next: () => {
         this.msg.add({ severity: 'success', summary: 'Cargo extra agregado' });
-        this.newExtraAmount = 0; this.newExtraNotes = '';
+        this.newExtraAmount = null; this.newExtraNotes = '';
         this.savingExtra = false;
         this.loadPeriod(this.period!.id);
       },

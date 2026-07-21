@@ -70,7 +70,7 @@
               <th>F. Pago</th>
               <th>Comprobante</th>
               <th>Estado</th>
-              <th style="width:120px">Acciones</th>
+              <th style="width:150px">Acciones</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-payment>
@@ -131,6 +131,9 @@
                   [disabled]="payment.status === 'PAID'"></button>
                 <button pButton icon="pi pi-file-pdf" [rounded]="true" [text]="true" severity="secondary"
                   (click)="downloadPdf(payment)" pTooltip="Descargar PDF" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"></button>
+                <button pButton [icon]="sendingPaymentId === payment.id ? 'pi pi-spin pi-spinner' : 'pi pi-send'" [rounded]="true" [text]="true" severity="success"
+                  (click)="sendEmailToPayment(payment)" pTooltip="Enviar correo solo a este propietario" tooltipPosition="top" [appendTo]="'body'" [fitContent]="true"
+                  [disabled]="sendingPaymentId !== null || sending || payment.status === 'PAID' || !payment.owner?.email"></button>
               </td>
             </tr>
           </ng-template>
@@ -449,7 +452,7 @@
         <form [formGroup]="paymentForm" (ngSubmit)="registerPayment()">
           <div class="field">
             <label>Monto pagado *</label>
-            <p-inputNumber formControlName="amountPaid" [min]="0.01" [minFractionDigits]="2" prefix="$" class="w-full" inputStyleClass="w-full" />
+            <input pInputText type="number" formControlName="amountPaid" min="0.01" step="0.01" class="w-full" />
           </div>
           @if (hasMoraPriority) {
             <div class="mora-application">
@@ -771,7 +774,7 @@
                               </div>
                             }
                             <div class="manual-confirm-grid">
-                              <label class="manual-field"><span>3. Valor del comprobante</span><p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" inputStyleClass="text-right" /></label>
+                              <label class="manual-field"><span>3. Valor del comprobante</span><input pInputText type="number" [(ngModel)]="receipt.amount" min="0.01" step="0.01" class="text-right" /></label>
                               <label class="manual-field"><span>4. Fecha del comprobante</span><input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" /></label>
                               <button pButton icon="pi pi-check" label="Confirmar registro" [disabled]="!canConfirmReceipt(receipt)" (click)="confirmReceipt(receipt)"></button>
                             </div>
@@ -820,7 +823,7 @@
                             <span class="receipt-warning"><i class="pi pi-info-circle"></i> Esta alícuota ya está pagada.</span>
                           } @else {
                             <div class="receipt-values">
-                              <p-inputNumber [(ngModel)]="receipt.amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" placeholder="Valor detectado" inputStyleClass="text-right" />
+                              <input pInputText type="number" [(ngModel)]="receipt.amount" min="0.01" step="0.01" placeholder="Valor detectado" class="text-right" />
                               <input pInputText [(ngModel)]="receipt.paymentDate" placeholder="YYYY-MM-DD" class="receipt-date" />
                               @if (!receipt.amount) {
                                 <small class="receipt-warning">OCR no detectó el valor: ingrésalo para confirmar.</small>
@@ -871,8 +874,8 @@
               @if (editingExtra?.id === extra.id) {
                 <!-- Fila en edición -->
                 <div class="extra-edit-row">
-                  <p-inputNumber [(ngModel)]="editExtraAmount" [min]="0.01" [minFractionDigits]="2"
-                    prefix="$" styleClass="w-7rem" inputStyleClass="text-right" />
+                  <input pInputText type="number" [(ngModel)]="editExtraAmount" min="0.01" step="0.01"
+                    class="w-7rem text-right" />
                   <input pInputText [(ngModel)]="editExtraNotes" class="flex-1"
                     placeholder="Concepto..." />
                   <button pButton icon="pi pi-check" [text]="true" [rounded]="true" severity="success"
@@ -909,13 +912,13 @@
           <div class="extra-add-section">
             <h4 class="extra-add-title"><i class="pi pi-plus-circle mr-1"></i>Nuevo cargo</h4>
             <div class="extra-add-row">
-              <p-inputNumber [(ngModel)]="newExtraAmount" [min]="0.01" [minFractionDigits]="2"
-                prefix="$" placeholder="Monto" inputStyleClass="text-right" />
+              <input pInputText type="number" [(ngModel)]="newExtraAmount" min="0.01" step="0.01"
+                placeholder="Monto" class="text-right" />
               <input pInputText [(ngModel)]="newExtraNotes" class=""
                 placeholder="Concepto (requerido)" />
               <button pButton icon="pi pi-check" label="Agregar"
                 [loading]="savingExtra"
-                [disabled]="newExtraAmount <= 0 || !newExtraNotes.trim()"
+                [disabled]="(newExtraAmount || 0) <= 0 || !newExtraNotes.trim()"
                 (click)="addExtra()"></button>
             </div>
           </div>

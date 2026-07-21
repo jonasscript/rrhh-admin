@@ -115,8 +115,7 @@
   min-height: 42px;
 }
 :host ::ng-deep .wizard-form .p-dropdown,
-:host ::ng-deep .wizard-form .p-inputnumber,
-:host ::ng-deep .wizard-form .p-inputnumber-input {
+:host ::ng-deep .wizard-form input {
   width: 100%;
 }
 

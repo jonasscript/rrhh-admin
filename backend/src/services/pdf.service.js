@@ -108,7 +108,10 @@ const generateAliquotPdf = (payment) =>
     doc.on('error', reject);
 
     const monthName = MONTHS_ES[payment.month];
-    const total     = parseFloat(payment.aliquot_amount);
+    const extrasTotal = Array.isArray(payment.extras)
+      ? payment.extras.reduce((sum, extra) => sum + (parseFloat(extra.amount) || 0), 0)
+      : 0;
+    const total     = parseFloat(payment.aliquot_amount) + extrasTotal;
 
     doc.fontSize(16).fillColor('#1e40af').text('COMPROBANTE DE ALÍCUOTA', { align: 'center' });
     doc.fontSize(11).fillColor('#334155').text(`${monthName} ${payment.year}`, { align: 'center' });
@@ -123,6 +126,11 @@ const generateAliquotPdf = (payment) =>
     doc.moveDown(0.5);
 
     row(doc, 'Alícuota del período', fmt(payment.aliquot_amount));
+    if (Array.isArray(payment.extras) && payment.extras.length) {
+      for (const extra of payment.extras) {
+        row(doc, `Cargo extra: ${extra.notes || 'Sin detalle'}`, fmt(extra.amount));
+      }
+    }
     doc.moveTo(40, doc.y).lineTo(395, doc.y).stroke('#1e40af');
     doc.moveDown(0.3);
     doc.fontSize(13).fillColor('#1e40af');
@@ -133,6 +141,281 @@ const generateAliquotPdf = (payment) =>
     row(doc, 'Monto pagado', fmt(payment.paid_amount));
     row(doc, 'Estado', payment.status);
     if (payment.payment_date) row(doc, 'Fecha de pago', payment.payment_date);
+
+    doc.end();
+  });
+
+/**
+ * Genera un PDF del resumen mensual del propietario: total del período,
+ * porcentaje, alícuota, cargos extras y total a pagar.
+ * @param {object} opts — { payment, extras }
+ * @returns {Promise<Buffer>}
+ */
+const generateOwnerExtrasPdf = ({ payment, extras = [] }) =>
+  new Promise((resolve, reject) => {
+    const doc    = new PDFDocument({ margin: 40, size: 'A5' });
+    const chunks = [];
+
+    doc.on('data',  (c) => chunks.push(c));
+    doc.on('end',   ()  => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const monthName = MONTHS_ES[payment.month];
+    const totalExtras = extras.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const periodTotal = parseFloat(payment.grand_total) > 0
+      ? parseFloat(payment.grand_total)
+      : parseFloat(payment.total_expenses) || 0;
+    const participationPct = parseFloat(payment.participation_pct) || 0;
+    const aliquotAmount = parseFloat(payment.aliquot_amount) || 0;
+    const totalToPay = aliquotAmount + totalExtras;
+
+    doc.fontSize(16).fillColor('#1e40af').text('RESUMEN MENSUAL DEL PROPIETARIO', { align: 'center' });
+    doc.fontSize(11).fillColor('#334155').text(`${monthName} ${payment.year}`, { align: 'center' });
+    doc.moveDown();
+
+    doc.fontSize(11).fillColor('#1e293b');
+    doc.text(`Propietario: ${payment.owner_name}`);
+    doc.text(`Unidad:      ${payment.unit_number}`);
+    doc.moveDown();
+    doc.moveTo(40, doc.y).lineTo(395, doc.y).stroke('#94a3b8');
+    doc.moveDown(0.5);
+
+    row(doc, 'Total del mes del período', fmt(periodTotal));
+    row(doc, `Participación del propietario`, `${participationPct.toFixed(4)}%`);
+    row(doc, 'Alícuota del mes', fmt(aliquotAmount));
+    doc.moveDown(0.2);
+
+    if (extras.length) {
+      for (const extra of extras) {
+        row(doc, `Cargo extra: ${extra.notes || 'Sin detalle'}`, fmt(extra.amount));
+      }
+    } else {
+      row(doc, 'Cargos extras', fmt(0));
+    }
+
+    doc.moveTo(40, doc.y).lineTo(395, doc.y).stroke('#1e40af');
+    doc.moveDown(0.3);
+    doc.fontSize(13).fillColor('#1e40af');
+    row(doc, 'TOTAL A PAGAR DEL MES', fmt(totalToPay), true);
+
+    doc.end();
+  });
+
+/**
+ * Genera el resumen del período que se crea/genera en condo-periods:
+ * gastos fijos, variables, provisiones y total base de alícuotas.
+ */
+const generatePeriodSummaryPdf = ({ condoName, period, expenseItems = [], provisions = [] }) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+
+    doc.on('data',  (c) => chunks.push(c));
+    doc.on('end',   ()  => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const monthName = MONTHS_ES[period.month];
+    const fixedTotal = expenseItems
+      .filter(item => item.expense_type === 'FIXED' || item.expenseType === 'FIXED')
+      .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const variableTotal = expenseItems
+      .filter(item => item.expense_type === 'VARIABLE' || item.expenseType === 'VARIABLE')
+      .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const totalExpenses = parseFloat(period.total_expenses) || fixedTotal + variableTotal;
+    const totalProvisions = parseFloat(period.total_provisions) || 0;
+    const grandTotal = parseFloat(period.grand_total) > 0 ? parseFloat(period.grand_total) : totalExpenses + totalProvisions;
+
+    doc.fontSize(16).fillColor('#1e40af').text('RESUMEN DEL PERÍODO', { align: 'center' });
+    doc.fontSize(11).fillColor('#334155').text(condoName || 'Condominio', { align: 'center' });
+    doc.fontSize(10).fillColor('#64748b').text(`${monthName} ${period.year}`, { align: 'center' });
+    doc.moveDown();
+    balanceDivider(doc, '#94a3b8');
+
+    balanceHeading(doc, 'RESUMEN DE CÁLCULO');
+    balanceRow(doc, 'Gastos fijos', fmt(fixedTotal));
+    balanceRow(doc, 'Gastos variables', fmt(variableTotal));
+    balanceRow(doc, 'Total gastos del período', fmt(totalExpenses), { bold: true });
+    balanceRow(doc, 'Provisiones', fmt(totalProvisions));
+    balanceRow(doc, 'Total base para alícuotas', fmt(grandTotal), { bold: true, color: '#1e40af' });
+
+    if (period.notes || period.variable_notes) {
+      doc.moveDown(0.3);
+      if (period.notes) balanceRow(doc, 'Notas', String(period.notes), { labelColor: '#475569' });
+      if (period.variable_notes) balanceRow(doc, 'Notas variables', String(period.variable_notes), { labelColor: '#475569' });
+    }
+
+    doc.moveDown(0.5);
+    balanceHeading(doc, 'DETALLE DE GASTOS', '#f8fafc');
+    if (expenseItems.length) {
+      for (const item of expenseItems) {
+        balanceRow(doc, item.name || 'Gasto', fmt(item.amount), {
+          note: item.category || '',
+          labelColor: '#475569',
+        });
+      }
+    } else {
+      balanceRow(doc, 'Sin gastos registrados', fmt(0), { labelColor: '#64748b' });
+    }
+
+    doc.moveDown(0.5);
+    balanceHeading(doc, 'PROVISIONES', '#f8fafc');
+    if (provisions.length) {
+      for (const provision of provisions) {
+        balanceRow(doc, provision.name || 'Provisión', fmt(provision.amount), { labelColor: '#475569' });
+      }
+    } else {
+      balanceRow(doc, 'Sin provisiones aplicadas', fmt(0), { labelColor: '#64748b' });
+    }
+
+    doc.fontSize(8).fillColor('#94a3b8')
+      .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, 40, 760, { align: 'right' });
+
+    doc.end();
+  });
+
+/**
+ * Genera el PDF para el correo de alícuota:
+ * 1) resumen mensual del propietario;
+ * 2) resumen de mora, solo si existe;
+ * 3) resumen del período usado para calcular las alícuotas.
+ */
+const generateAliquotEmailSummaryPdf = ({ condoName, payment, extras = [], period, expenseItems = [], provisions = [], moraDebts = [] }) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks = [];
+
+    doc.on('data',  (c) => chunks.push(c));
+    doc.on('end',   ()  => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const monthName = MONTHS_ES[payment.month];
+    const totalExtras = extras.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const periodTotal = parseFloat(payment.grand_total) > 0
+      ? parseFloat(payment.grand_total)
+      : parseFloat(payment.total_expenses) || 0;
+    const participationPct = parseFloat(payment.participation_pct) || 0;
+    const aliquotAmount = parseFloat(payment.aliquot_amount) || 0;
+    const moraAmount = Math.max(0, parseFloat(payment.owner_mora_amount ?? payment.mora_at_billing ?? 0) || 0);
+    const moraDebtsTotal = moraDebts.reduce((sum, debt) => sum + (parseFloat(debt.pending_amount ?? debt.pendingAmount) || 0), 0);
+    const moraTotal = Math.max(moraAmount, moraDebtsTotal);
+    const totalToPay = aliquotAmount + totalExtras;
+
+    doc.fontSize(16).fillColor('#1e40af').text('RESUMEN MENSUAL DEL PROPIETARIO', { align: 'center' });
+    doc.fontSize(11).fillColor('#334155').text(condoName || 'Condominio', { align: 'center' });
+    doc.fontSize(10).fillColor('#64748b').text(`${monthName} ${payment.year}`, { align: 'center' });
+    doc.moveDown();
+    balanceDivider(doc, '#94a3b8');
+
+    balanceHeading(doc, 'PROPIETARIO');
+    balanceRow(doc, 'Propietario', payment.owner_name || 'Propietario');
+    balanceRow(doc, 'Unidad', payment.unit_number || '—');
+    balanceRow(doc, 'Total del mes del período', fmt(periodTotal));
+    balanceRow(doc, 'Participación del propietario', `${participationPct.toFixed(4)}%`);
+    balanceRow(doc, 'Alícuota del mes', fmt(aliquotAmount));
+
+    doc.moveDown(0.4);
+    balanceHeading(doc, 'CARGOS EXTRAS', '#f8fafc');
+    if (extras.length) {
+      for (const extra of extras) {
+        balanceRow(doc, `Cargo extra: ${extra.notes || 'Sin detalle'}`, fmt(extra.amount), { labelColor: '#475569' });
+      }
+    } else {
+      balanceRow(doc, 'Cargos extras', fmt(0), { labelColor: '#64748b' });
+    }
+
+    doc.moveDown(0.4);
+    balanceDivider(doc, '#1e40af');
+    balanceRow(doc, 'TOTAL A PAGAR DEL MES', fmt(totalToPay), { bold: true, color: '#1e40af' });
+    doc.fontSize(8).fillColor('#94a3b8')
+      .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, 40, 760, { align: 'right' });
+
+    doc.addPage();
+
+    if (moraTotal > 0) {
+      doc.fontSize(16).fillColor('#dc2626').text('RESUMEN DE MORA PENDIENTE', { align: 'center' });
+      doc.fontSize(11).fillColor('#334155').text(condoName || 'Condominio', { align: 'center' });
+      doc.fontSize(10).fillColor('#64748b').text(payment.owner_name || 'Propietario', { align: 'center' });
+      doc.moveDown();
+      balanceDivider(doc, '#fca5a5');
+
+      balanceHeading(doc, 'PERÍODOS PENDIENTES', '#fef2f2');
+      if (moraDebts.length) {
+        for (const debt of moraDebts) {
+          const debtMonthName = MONTHS_ES[debt.month] || '';
+          const debtLabel = debt.month && debt.year
+            ? `${debtMonthName} ${debt.year}`
+            : (debt.label || 'Mora sin período asociado');
+          balanceRow(doc, debtLabel, fmt(debt.pending_amount ?? debt.pendingAmount), {
+            note: debt.month && debt.year ? `Pagado ${fmt(debt.paid_amount ?? debt.amountPaid)}` : '',
+            labelColor: '#475569',
+            color: '#dc2626',
+          });
+        }
+      } else {
+        balanceRow(doc, 'Mora sin período asociado', fmt(moraTotal), {
+          labelColor: '#475569',
+          color: '#dc2626',
+        });
+      }
+
+      doc.moveDown(0.4);
+      balanceDivider(doc, '#dc2626');
+      balanceRow(doc, 'TOTAL MORA PENDIENTE', fmt(moraTotal), { bold: true, color: '#dc2626' });
+      doc.fontSize(8).fillColor('#94a3b8')
+        .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, 40, 760, { align: 'right' });
+
+      doc.addPage();
+    }
+
+    const periodMonthName = MONTHS_ES[period.month];
+    const fixedTotal = expenseItems
+      .filter(item => item.expense_type === 'FIXED' || item.expenseType === 'FIXED')
+      .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const variableTotal = expenseItems
+      .filter(item => item.expense_type === 'VARIABLE' || item.expenseType === 'VARIABLE')
+      .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
+    const totalExpenses = parseFloat(period.total_expenses) || fixedTotal + variableTotal;
+    const totalProvisions = parseFloat(period.total_provisions) || 0;
+    const grandTotal = parseFloat(period.grand_total) > 0 ? parseFloat(period.grand_total) : totalExpenses + totalProvisions;
+
+    doc.fontSize(16).fillColor('#1e40af').text('RESUMEN DEL PERÍODO', { align: 'center' });
+    doc.fontSize(11).fillColor('#334155').text(condoName || 'Condominio', { align: 'center' });
+    doc.fontSize(10).fillColor('#64748b').text(`${periodMonthName} ${period.year}`, { align: 'center' });
+    doc.moveDown();
+    balanceDivider(doc, '#94a3b8');
+
+    balanceHeading(doc, 'RESUMEN DE CÁLCULO');
+    balanceRow(doc, 'Gastos fijos', fmt(fixedTotal));
+    balanceRow(doc, 'Gastos variables', fmt(variableTotal));
+    balanceRow(doc, 'Total gastos del período', fmt(totalExpenses), { bold: true });
+    balanceRow(doc, 'Provisiones', fmt(totalProvisions));
+    balanceRow(doc, 'Total base para alícuotas', fmt(grandTotal), { bold: true, color: '#1e40af' });
+
+    doc.moveDown(0.5);
+    balanceHeading(doc, 'DETALLE DE GASTOS', '#f8fafc');
+    if (expenseItems.length) {
+      for (const item of expenseItems) {
+        balanceRow(doc, item.name || 'Gasto', fmt(item.amount), {
+          note: item.category || '',
+          labelColor: '#475569',
+        });
+      }
+    } else {
+      balanceRow(doc, 'Sin gastos registrados', fmt(0), { labelColor: '#64748b' });
+    }
+
+    doc.moveDown(0.5);
+    balanceHeading(doc, 'PROVISIONES', '#f8fafc');
+    if (provisions.length) {
+      for (const provision of provisions) {
+        balanceRow(doc, provision.name || 'Provisión', fmt(provision.amount), { labelColor: '#475569' });
+      }
+    } else {
+      balanceRow(doc, 'Sin provisiones aplicadas', fmt(0), { labelColor: '#64748b' });
+    }
+
+    doc.fontSize(8).fillColor('#94a3b8')
+      .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, 40, 760, { align: 'right' });
 
     doc.end();
   });
@@ -207,12 +490,15 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
     doc.on('error', reject);
 
     const ensureSpace = (height = 70) => {
-      if (doc.y + height > 740) doc.addPage();
+      const bottom = doc.page.height - doc.page.margins.bottom - 24;
+      if (doc.y + height > bottom) doc.addPage();
     };
 
     const periodLabel = year
       ? (month_from && month_to
-          ? `${MONTHS_ES[+month_from]}–${MONTHS_ES[+month_to]} ${year}`
+          ? (+month_from === +month_to
+              ? `Periodo ${MONTHS_ES[+month_from]} ${year}`
+              : `${MONTHS_ES[+month_from]} a ${MONTHS_ES[+month_to]} ${year}`)
           : `Año ${year}`)
       : 'Todos los períodos';
 
@@ -362,6 +648,7 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
         color: pendingProvisionSavings > 0 ? '#dc2626' : '#64748b',
       });
 
+      ensureSpace(86);
       doc.moveDown(0.1);
       balanceDivider(doc, '#e2e8f0');
       balanceRow(doc, 'Total gastos reales', fmt(total_operating_expenses), { bold: true });
@@ -378,14 +665,13 @@ const generateBalancePdf = ({ condoName, periods, totalMora = 0, year, month_fro
     }
 
     // Cuentas por cobrar
-    ensureSpace(70);
+    ensureSpace(86);
     balanceHeading(doc, 'CUENTAS POR COBRAR');
     balanceRow(doc, 'Mora por cobrar', fmt(totalMora), { bold: true, color: '#dc2626' });
 
     // Pie
-    doc.moveDown(2);
     doc.fontSize(8).fillColor('#94a3b8')
-       .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, { align: 'right' });
+       .text(`Generado el ${new Date().toLocaleDateString('es-EC')}`, 40, 760, { align: 'right' });
 
     doc.end();
   });
@@ -509,4 +795,12 @@ const generateShiftSchedulePdf = ({ startDate, endDate, assignments }) =>
     doc.end();
   });
 
-module.exports = { generatePayrollPdf, generateAliquotPdf, generateBalancePdf, generateShiftSchedulePdf };
+module.exports = {
+  generatePayrollPdf,
+  generateAliquotPdf,
+  generateOwnerExtrasPdf,
+  generatePeriodSummaryPdf,
+  generateAliquotEmailSummaryPdf,
+  generateBalancePdf,
+  generateShiftSchedulePdf,
+};

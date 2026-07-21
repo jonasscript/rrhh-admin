@@ -6,7 +6,6 @@ import { firstValueFrom, forkJoin } from 'rxjs';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { DropdownModule } from 'primeng/dropdown';
 import { SelectButtonModule } from 'primeng/selectbutton';
@@ -26,7 +25,7 @@ interface PeriodLineItem {
   name: string;
   category: ExpenseCategory;
   expenseType: ExpenseType;
-  amount: number;
+  amount: number | null;
   selected: boolean;
   isRecurring: boolean;
   isAdHoc: boolean;
@@ -58,7 +57,7 @@ type TagSeverity = 'success' | 'info' | 'secondary' | 'contrast' | 'warning' | '
   imports: [
     CommonModule, FormsModule, RouterModule,
     TableModule, ButtonModule, DialogModule, ConfirmDialogModule,
-    InputNumberModule, InputTextModule, DropdownModule,
+    InputTextModule, DropdownModule,
     SelectButtonModule, CheckboxModule, TagModule,
     ToastModule, TooltipModule, SkeletonModule, DividerModule,
   ],
@@ -98,14 +97,14 @@ export class CondoPeriodsComponent implements OnInit {
 
   // Provision selection (from catalog, toggled per-period)
   provisionCatalog: ProvisionCatalogItem[] = [];
-  provisionItems: (ProvisionCatalogItem & { selected: boolean; customValue: number })[] = [];
+  provisionItems: (ProvisionCatalogItem & { selected: boolean; customValue: number | null })[] = [];
 
   get provisionBreakdown(): { id: string; name: string; amount: number }[] {
     const selected = this.provisionItems.filter(p => p.selected);
     const fixedAndVariableTotal = selected.reduce((sum, p) => {
       const ct = p.calc_type as string;
       if (ct === 'FIXED') return sum + p.value;
-      if (ct === 'VARIABLE') return sum + p.customValue;
+      if (ct === 'VARIABLE') return sum + Number(p.customValue || 0);
       return sum;
     }, 0);
     const percentageBase = this.grandTotal + fixedAndVariableTotal;
@@ -114,7 +113,7 @@ export class CondoPeriodsComponent implements OnInit {
       const ct = p.calc_type as string;
       let amount: number;
       if (ct === 'FIXED') { amount = p.value; }
-      else if (ct === 'VARIABLE') { amount = p.customValue; }
+      else if (ct === 'VARIABLE') { amount = Number(p.customValue || 0); }
       else { amount = Math.round(percentageBase * p.value / 100 * 100) / 100; }
       return { id: p.id, name: p.name, amount };
     });
@@ -178,7 +177,7 @@ export class CondoPeriodsComponent implements OnInit {
         this.provisionItems   = catalog.map(p => ({
           ...p,
           value:       parseFloat(String(p.value)) || 0,
-          customValue: parseFloat(String(p.value)) || 0,
+          customValue: (p.calc_type as string) === 'VARIABLE' ? null : parseFloat(String(p.value)) || 0,
           selected:    p.is_active,
         }));
         this.lineItems = items.items
@@ -189,7 +188,7 @@ export class CondoPeriodsComponent implements OnInit {
             name:          i.name,
             category:      i.category,
             expenseType:   i.expenseType,
-            amount:        i.amount,
+            amount:        i.expenseType === 'VARIABLE' && Number(i.amount || 0) === 0 ? null : i.amount,
             selected:      i.isRecurring,
             isRecurring:   i.isRecurring,
             isAdHoc:       false,
@@ -242,7 +241,9 @@ export class CondoPeriodsComponent implements OnInit {
               name:          saved?.name || item.name,
               category:      saved?.category || item.category,
               expenseType:   saved?.expenseType || item.expenseType,
-              amount:        saved?.amount ?? item.amount,
+              amount:        (saved?.expenseType || item.expenseType) === 'VARIABLE' && Number(saved?.amount ?? item.amount ?? 0) === 0
+                ? null
+                : saved?.amount ?? item.amount,
               selected:      !!saved,
               isRecurring:   item.isRecurring,
               isAdHoc:       false,
@@ -255,7 +256,7 @@ export class CondoPeriodsComponent implements OnInit {
             name:          item.name,
             category:      item.category,
             expenseType:   item.expenseType,
-            amount:        item.amount,
+            amount:        item.expenseType === 'VARIABLE' && Number(item.amount || 0) === 0 ? null : item.amount,
             selected:      true,
             isRecurring:   false,
             isAdHoc:       false,
@@ -286,7 +287,9 @@ export class CondoPeriodsComponent implements OnInit {
           return {
             ...provision,
             value,
-            customValue: saved ? Number(saved.amount || 0) : value,
+            customValue: (provision.calc_type as string) === 'VARIABLE'
+              ? (saved && Number(saved.amount || 0) > 0 ? Number(saved.amount) : null)
+              : (saved ? Number(saved.amount || 0) : value),
             selected: !!saved,
           };
         });
@@ -303,7 +306,7 @@ export class CondoPeriodsComponent implements OnInit {
   addAdHoc() {
     this.adHocItems.push({
       expenseItemId: null, name: '', category: 'OTHER',
-      expenseType: 'VARIABLE', amount: 0,
+      expenseType: 'VARIABLE', amount: null,
       selected: true, isRecurring: false, isAdHoc: true,
     });
   }
@@ -313,19 +316,19 @@ export class CondoPeriodsComponent implements OnInit {
   private periodPayload() {
     const items = [
       ...this.lineItems.filter(i => i.selected),
-      ...this.adHocItems.filter(i => i.amount > 0 && i.name.trim()),
+      ...this.adHocItems.filter(i => Number(i.amount || 0) > 0 && i.name.trim()),
     ].map(i => ({
       expenseItemId: i.expenseItemId,
       name:          i.name || 'Gasto',
       category:      i.category,
       expenseType:   i.expenseType,
-      amount:        i.amount,
+      amount:        Number(i.amount || 0),
     }));
 
     const selectedProvisions = this.provisionItems.filter(p => p.selected);
     const provisionAmounts: Record<string, number> = {};
     for (const p of selectedProvisions) {
-      if ((p.calc_type as string) === 'VARIABLE') provisionAmounts[p.id] = p.customValue;
+      if ((p.calc_type as string) === 'VARIABLE') provisionAmounts[p.id] = Number(p.customValue || 0);
     }
 
     return {

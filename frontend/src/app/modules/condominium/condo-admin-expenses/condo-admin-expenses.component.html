@@ -160,7 +160,7 @@
           <div class="two-cols">
             <label class="field">
               <span>Monto</span>
-              <p-inputNumber formControlName="amount" [min]="0.01" [minFractionDigits]="2" [maxFractionDigits]="2" prefix="$" styleClass="w-full" inputStyleClass="w-full" />
+              <input pInputText type="number" formControlName="amount" min="0.01" step="0.01" class="w-full" />
             </label>
             <label class="field">
               <span>Forma de pago</span>

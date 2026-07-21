@@ -103,7 +103,14 @@ export class CondominiumService extends ApiService {
   }
   updatePeriod(id: string, data: any): Observable<CondoExpensePeriod> { return this.patch(`/condominium/periods/${id}`, data); }
   generateAliquots(id: string): Observable<CondoExpensePeriod> { return this.post(`/condominium/periods/${id}/generate`, {}); }
-  sendAliquotEmails(id: string): Observable<{ sent: number }> { return this.post(`/condominium/periods/${id}/send-emails`, {}); }
+  sendAliquotEmails(id: string): Observable<{ sent: number; total: number; skippedWithoutEmail: number }> {
+    return this.post(`/condominium/periods/${id}/send-emails`, {});
+  }
+  sendAliquotEmail(id: string, paymentId: string): Observable<{
+    sent: number; paymentId: string; ownerEmail: string; ownerName: string; unitNumber: string;
+  }> {
+    return this.post(`/condominium/periods/${id}/payments/${paymentId}/send-email`, {});
+  }
   closePeriod(id: string): Observable<CondoExpensePeriod> { return this.post(`/condominium/periods/${id}/close`, {}); }
   deletePeriod(id: string): Observable<void> { return this.delete(`/condominium/periods/${id}`); }
 

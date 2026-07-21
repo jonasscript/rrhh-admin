@@ -6,7 +6,6 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { DropdownModule } from 'primeng/dropdown';
-import { InputNumberModule } from 'primeng/inputnumber';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputTextareaModule } from 'primeng/inputtextarea';
 import { TableModule } from 'primeng/table';
@@ -57,7 +56,7 @@ const PAYMENT_LABELS: Record<CondoAdminPaymentMethod, string> = {
   standalone: true,
   imports: [
     CommonModule, FormsModule, ReactiveFormsModule, ButtonModule, ConfirmDialogModule,
-    DialogModule, DropdownModule, InputNumberModule, InputTextModule, InputTextareaModule,
+    DialogModule, DropdownModule, InputTextModule, InputTextareaModule,
     TableModule, TagModule, ToastModule, TooltipModule,
   ],
   providers: [MessageService, ConfirmationService],
@@ -94,7 +93,7 @@ export class CondoAdminExpensesComponent implements OnInit {
     category: ['ADMINISTRATION' as CondoAdminExpenseCategory, Validators.required],
     vendor: ['', [Validators.required, Validators.minLength(2)]],
     description: ['', [Validators.required, Validators.minLength(3)]],
-    amount: [0, [Validators.required, Validators.min(0.01)]],
+    amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     paymentMethod: ['TRANSFER' as CondoAdminPaymentMethod, Validators.required],
     notes: [''],
   });
@@ -143,7 +142,7 @@ export class CondoAdminExpensesComponent implements OnInit {
       category: 'ADMINISTRATION',
       vendor: '',
       description: '',
-      amount: 0,
+      amount: null,
       paymentMethod: 'TRANSFER',
       notes: '',
     });

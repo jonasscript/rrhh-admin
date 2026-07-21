@@ -13,6 +13,7 @@ const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   email: {
+    delivery: (process.env.EMAIL_DELIVERY || 'SMTP').toUpperCase(),
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT || '587', 10),
     user: process.env.EMAIL_USER || '',
@@ -26,6 +27,7 @@ const config = {
       // "consumers" funciona con cuentas personales @outlook.com/@hotmail.com.
       tenant: process.env.EMAIL_OAUTH2_TENANT || 'consumers',
       tokenUrl: process.env.EMAIL_OAUTH2_TOKEN_URL || '',
+      graphScope: process.env.EMAIL_OAUTH2_GRAPH_SCOPE || 'https://graph.microsoft.com/Mail.Send',
     },
   },
 

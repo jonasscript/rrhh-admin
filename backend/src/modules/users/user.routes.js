@@ -9,9 +9,6 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 const router = Router();
 
-// Todas las rutas de usuarios requieren autenticación y rol ADMIN o HR
-router.use(authenticate);
-
 // ── Schemas ───────────────────────────────────────────────────
 const createSchema = z.object({
   email:    z.string().email('Email inválido'),
@@ -29,6 +26,31 @@ const updateSchema = z.object({
 const resetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
 });
+
+// ── POST /users ───────────────────────────────────────────────
+// Registro público de un nuevo usuario del sistema
+router.post('/', async (req, res) => {
+  const { email, password, role } = createSchema.parse(req.body);
+
+  // Verificar duplicado
+  const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
+  if (existing.rows[0]) throw new AppError('Ya existe un usuario con ese correo', 409);
+
+  const hashed = await bcrypt.hash(password, 12);
+  const id     = newId();
+
+  const { rows } = await query(
+    `INSERT INTO users (id, email, password, role, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, NULL, NULL)
+     RETURNING id, email, role, is_active, created_at`,
+    [id, email, hashed, role]
+  );
+
+  success(res, rows[0], 201, 'Usuario registrado exitosamente');
+});
+
+// Las demás rutas de usuarios requieren autenticación.
+router.use(authenticate);
 
 // ── GET /users ─────────────────────────────────────────────────
 // Lista paginada; filtros: search (email), role, isActive
@@ -89,28 +111,6 @@ router.get('/:id', async (req, res) => {
   );
   if (!rows[0]) throw new AppError('Usuario no encontrado', 404);
   success(res, rows[0]);
-});
-
-// ── POST /users ───────────────────────────────────────────────
-// Registrar un nuevo usuario del sistema
-router.post('/', authorize('ADMIN', 'HR'), async (req, res) => {
-  const { email, password, role } = createSchema.parse(req.body);
-
-  // Verificar duplicado
-  const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
-  if (existing.rows[0]) throw new AppError('Ya existe un usuario con ese correo', 409);
-
-  const hashed = await bcrypt.hash(password, 12);
-  const id     = newId();
-
-  const { rows } = await query(
-    `INSERT INTO users (id, email, password, role, created_by, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $5)
-     RETURNING id, email, role, is_active, created_at`,
-    [id, email, hashed, role, req.user.id]
-  );
-
-  success(res, rows[0], 201, 'Usuario registrado exitosamente');
 });
 
 // ── PUT /users/:id ────────────────────────────────────────────

@@ -9,7 +9,12 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { uploadSingle } = require('../../services/upload.service');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../../services/cloudinary.service');
 const { sendAliquotEmail }   = require('../../services/email.service');
-const { generateAliquotPdf, generateBalancePdf } = require('../../services/pdf.service');
+const {
+  generateAliquotPdf,
+  generateAliquotEmailSummaryPdf,
+  generatePeriodSummaryPdf,
+  generateBalancePdf,
+} = require('../../services/pdf.service');
 const { newId }  = require('../../utils/id');
 const config     = require('../../config/config');
 
@@ -1234,6 +1239,221 @@ router.post('/movements/scan', authorize('ADMIN'), uploadSingle, async (req, res
   });
 });
 
+async function buildBalancePdfBuffer({ year, month }) {
+  const conditions = [];
+  const params = [];
+  if (year) {
+    params.push(parseInt(year, 10));
+    conditions.push(`cep.year = $${params.length}`);
+  }
+  if (month) {
+    params.push(parseInt(month, 10));
+    conditions.push(`cep.month >= $${params.length}`);
+    params.push(parseInt(month, 10));
+    conditions.push(`cep.month <= $${params.length}`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const periodsRes = await query(
+    `SELECT cep.*,
+            COALESCE(SUM(CASE WHEN ap.status = 'PAID' THEN ap.paid_amount ELSE 0 END), 0) AS total_collected,
+            COALESCE(SUM(ap.aliquot_amount + COALESCE((
+              SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+            ), 0)), 0) AS total_billed
+     FROM condo_expense_periods cep
+     LEFT JOIN aliquot_payments ap ON ap.period_id = cep.id
+     ${where}
+     GROUP BY cep.id
+     ORDER BY cep.year ASC, cep.month ASC`,
+    params
+  );
+
+  const periodIds = periodsRes.rows.map(p => p.id);
+  let expenseItems = [], periodProvisions = [];
+  if (periodIds.length > 0) {
+    const [itemsRes, provisionsRes] = await Promise.all([
+      query(
+        `SELECT period_id, name, category, expense_type, amount::float AS amount
+         FROM condo_period_expense_items
+         WHERE period_id = ANY($1)
+         ORDER BY created_at`,
+        [periodIds]
+      ),
+      query(
+        `SELECT fe.period_id, fe.provision_id, COALESCE(pc.name, fe.fund_type) AS name,
+                fe.amount::float AS amount
+         FROM condo_fund_entries fe
+         LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+         WHERE fe.period_id = ANY($1) AND fe.entry_type = 'PROVISION'
+         ORDER BY fe.entry_date ASC`,
+        [periodIds]
+      ),
+    ]);
+    expenseItems = itemsRes.rows;
+    periodProvisions = provisionsRes.rows;
+  }
+
+  const adminExpensesRes = await query(
+    `SELECT id, expense_date::text AS "expenseDate",
+            EXTRACT(YEAR FROM expense_date)::int AS year,
+            EXTRACT(MONTH FROM expense_date)::int AS month,
+            expense_type AS "expenseType", category, vendor, description,
+            amount::float AS amount
+     FROM condo_admin_expenses ae
+     WHERE EXTRACT(YEAR FROM ae.expense_date)::int = $1
+       AND EXTRACT(MONTH FROM ae.expense_date)::int = $2
+     ORDER BY expense_date ASC, created_at ASC`,
+    [parseInt(year, 10), parseInt(month, 10)]
+  );
+
+  const periods = periodsRes.rows.map(period => ({
+    ...period,
+    expense_items: expenseItems.filter(item => item.period_id === period.id),
+    provisions: periodProvisions.filter(provision => provision.period_id === period.id),
+    admin_expenses: adminExpensesRes.rows.filter(expense => expense.year === period.year && expense.month === period.month),
+  }));
+
+  const moraRes = await query(
+    `SELECT COALESCE(SUM(mora_amount), 0)::float AS total_mora FROM condo_owners WHERE mora_amount > 0`
+  );
+  const totalMora = parseFloat(moraRes.rows[0]?.total_mora) || 0;
+
+  const cfgRes = await query('SELECT name FROM condo_config LIMIT 1');
+  const condoName = cfgRes.rows[0]?.name || 'Condominio';
+
+  return generateBalancePdf({
+    condoName,
+    periods,
+    totalMora,
+    year: parseInt(year, 10),
+    month_from: parseInt(month, 10),
+    month_to: parseInt(month, 10),
+  });
+}
+
+async function getPeriodSummaryPdfData(periodId) {
+  const periodRes = await query('SELECT * FROM condo_expense_periods WHERE id = $1', [periodId]);
+  const period = periodRes.rows[0];
+  if (!period) throw new AppError('Período no encontrado', 404);
+
+  const [itemsRes, provisionsRes, cfgRes] = await Promise.all([
+    query(
+      `SELECT period_id, name, category, expense_type, amount::float AS amount
+       FROM condo_period_expense_items
+       WHERE period_id = $1
+       ORDER BY expense_type DESC, created_at ASC`,
+      [periodId]
+    ),
+    query(
+      `SELECT fe.period_id, fe.provision_id, COALESCE(pc.name, fe.fund_type) AS name,
+              fe.amount::float AS amount, fe.description
+       FROM condo_fund_entries fe
+       LEFT JOIN provision_catalog pc ON pc.id = fe.provision_id
+       WHERE fe.period_id = $1 AND fe.entry_type = 'PROVISION'
+       ORDER BY fe.entry_date ASC, fe.created_at ASC`,
+      [periodId]
+    ),
+    query('SELECT name FROM condo_config LIMIT 1'),
+  ]);
+
+  return {
+    condoName: cfgRes.rows[0]?.name || 'Condominio',
+    period,
+    expenseItems: itemsRes.rows,
+    provisions: provisionsRes.rows,
+  };
+}
+
+async function buildPeriodSummaryPdfBuffer(periodId) {
+  return generatePeriodSummaryPdf(await getPeriodSummaryPdfData(periodId));
+}
+
+function previousMonthOf(year, month) {
+  const numericYear = parseInt(year, 10);
+  const numericMonth = parseInt(month, 10);
+  return numericMonth === 1
+    ? { year: numericYear - 1, month: 12 }
+    : { year: numericYear, month: numericMonth - 1 };
+}
+
+async function getPaymentExtras(paymentId) {
+  const { rows } = await query(
+    `SELECT id, amount::float AS amount, notes, created_at
+     FROM aliquot_payment_extras
+     WHERE payment_id = $1
+     ORDER BY created_at ASC`,
+    [paymentId]
+  );
+  return rows;
+}
+
+async function getOwnerMoraDebts(ownerId, ownerMoraAmount = 0) {
+  const { rows } = await query(
+    `SELECT
+       ap.id AS payment_id,
+       cep.month,
+       cep.year,
+       ap.aliquot_amount::float AS aliquot_amount,
+       COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0)::float AS extras_total,
+       ap.paid_amount::float AS paid_amount,
+       GREATEST(0, ap.aliquot_amount + COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0) - ap.paid_amount)::float AS pending_amount
+     FROM aliquot_payments ap
+     JOIN condo_expense_periods cep ON cep.id = ap.period_id
+     WHERE ap.owner_id = $1
+       AND ap.status = 'OVERDUE'
+       AND GREATEST(0, ap.aliquot_amount + COALESCE((
+         SELECT SUM(e.amount) FROM aliquot_payment_extras e WHERE e.payment_id = ap.id
+       ), 0) - ap.paid_amount) > 0.01
+     ORDER BY cep.year ASC, cep.month ASC`,
+    [ownerId]
+  );
+
+  const debtTotal = rows.reduce((sum, debt) => sum + (parseFloat(debt.pending_amount) || 0), 0);
+  const residualMora = Math.max(0, (parseFloat(ownerMoraAmount) || 0) - debtTotal);
+  if (residualMora > 0.01) {
+    rows.push({
+      payment_id: null,
+      label: 'Mora sin período asociado',
+      month: null,
+      year: null,
+      aliquot_amount: 0,
+      extras_total: 0,
+      paid_amount: 0,
+      pending_amount: Math.round(residualMora * 100) / 100,
+    });
+  }
+
+  return rows;
+}
+
+async function buildAliquotEmailAttachments(payment, sharedPeriodPdfs = null) {
+  const extras = await getPaymentExtras(payment.id);
+  const moraDebts = await getOwnerMoraDebts(payment.owner_id, payment.owner_mora_amount);
+  payment.extras = extras;
+  const periodSummaryData = sharedPeriodPdfs?.periodSummaryData ||
+    await getPeriodSummaryPdfData(payment.period_id);
+  const previous = previousMonthOf(payment.year, payment.month);
+  const previousBalancePdf = sharedPeriodPdfs?.previousBalancePdf ||
+    await buildBalancePdfBuffer(previous);
+
+  return [
+    {
+      filename: `resumen-alicuota-depto-${payment.unit_number}-${payment.year}-${String(payment.month).padStart(2, '0')}.pdf`,
+      content: await generateAliquotEmailSummaryPdf({ ...periodSummaryData, payment, extras, moraDebts }),
+      contentType: 'application/pdf',
+    },
+    {
+      filename: `balance-periodo-anterior-${previous.year}-${String(previous.month).padStart(2, '0')}.pdf`,
+      content: previousBalancePdf,
+      contentType: 'application/pdf',
+    },
+  ];
+}
+
 // ── Períodos ──────────────────────────────────────────────────
 
 // GET /condominium/periods
@@ -1749,9 +1969,20 @@ router.post('/periods/:id/generate', authorize('ADMIN'), async (req, res) => {
 
 // POST /condominium/periods/:id/send-emails — enviar correos de cobro
 router.post('/periods/:id/send-emails', authorize('ADMIN'), async (req, res) => {
+  const totalRes = await query(
+    `SELECT COUNT(*)::int AS total
+     FROM aliquot_payments ap
+     JOIN condo_owners o ON o.id = ap.owner_id
+     WHERE ap.period_id = $1
+       AND ap.status IN ('PENDING', 'PARTIAL', 'OVERDUE')`,
+    [req.params.id]
+  );
+
   const { rows } = await query(
     `SELECT ap.*, o.name AS owner_name, o.email AS owner_email, o.unit_number,
-            cep.month, cep.year, cep.total_expenses
+            o.participation_pct, o.mora_amount::float AS owner_mora_amount,
+            cep.month, cep.year, cep.total_expenses,
+            cep.total_provisions, cep.grand_total
      FROM aliquot_payments ap
      JOIN condo_owners o ON o.id = ap.owner_id
      JOIN condo_expense_periods cep ON cep.id = ap.period_id
@@ -1761,11 +1992,52 @@ router.post('/periods/:id/send-emails', authorize('ADMIN'), async (req, res) => 
   );
 
   let sent = 0;
+  const sharedPeriodPdfs = rows.length
+    ? {
+        periodSummaryData: await getPeriodSummaryPdfData(rows[0].period_id),
+        previousBalancePdf: await buildBalancePdfBuffer(previousMonthOf(rows[0].year, rows[0].month)),
+      }
+    : null;
   for (const payment of rows) {
-    await sendAliquotEmail(payment);
+    await sendAliquotEmail(payment, await buildAliquotEmailAttachments(payment, sharedPeriodPdfs));
     sent++;
   }
-  success(res, null, 200, `Emails enviados: ${sent}`);
+  success(res, {
+    sent,
+    total: totalRes.rows[0]?.total || rows.length,
+    skippedWithoutEmail: Math.max(0, (totalRes.rows[0]?.total || rows.length) - rows.length),
+  }, 200, `Emails enviados: ${sent}`);
+});
+
+// POST /condominium/periods/:id/payments/:paymentId/send-email
+// Enviar correo de cobro a un solo propietario del período.
+router.post('/periods/:id/payments/:paymentId/send-email', authorize('ADMIN'), async (req, res) => {
+  const { rows } = await query(
+    `SELECT ap.*, o.name AS owner_name, o.email AS owner_email, o.unit_number,
+            o.participation_pct, o.mora_amount::float AS owner_mora_amount,
+            cep.month, cep.year, cep.total_expenses,
+            cep.total_provisions, cep.grand_total
+     FROM aliquot_payments ap
+     JOIN condo_owners o ON o.id = ap.owner_id
+     JOIN condo_expense_periods cep ON cep.id = ap.period_id
+     WHERE ap.period_id = $1
+       AND ap.id = $2
+       AND ap.status IN ('PENDING', 'PARTIAL', 'OVERDUE')`,
+    [req.params.id, req.params.paymentId]
+  );
+
+  const payment = rows[0];
+  if (!payment) throw new AppError('Alícuota del período no encontrada o ya pagada', 404);
+  if (!payment.owner_email) throw new AppError('El propietario no tiene correo registrado', 400);
+
+  await sendAliquotEmail(payment, await buildAliquotEmailAttachments(payment));
+  success(res, {
+    sent: 1,
+    paymentId: payment.id,
+    ownerEmail: payment.owner_email,
+    ownerName: payment.owner_name,
+    unitNumber: payment.unit_number,
+  }, 200, 'Email enviado');
 });
 
 // POST /condominium/periods/:id/close — cerrar período
@@ -2300,7 +2572,7 @@ router.get('/payments/:paymentId/pdf', async (req, res) => {
   );
   if (!rows[0]) throw new AppError('Pago no encontrado', 404);
 
-  const pdfBuffer = await generateAliquotPdf(rows[0]);
+  const pdfBuffer = await generateAliquotPdf({ ...rows[0], extras: await getPaymentExtras(rows[0].id) });
   res.set({
     'Content-Type': 'application/pdf',
     'Content-Disposition': `attachment; filename="alicuota-${rows[0].unit_number}-${rows[0].year}-${rows[0].month}.pdf"`,

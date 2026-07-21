@@ -62,6 +62,8 @@ const registerApiRoutes = (base) => {
 registerApiRoutes('/api/v1');
 registerApiRoutes('/habbita-api/api/v1');
 registerApiRoutes('/habbita-api');
+// registerApiRoutes('/porton_del_rio_api/api/v1');
+// registerApiRoutes('/porton_del_rio_api');
 registerApiRoutes('');
 
 // ── Health check ──────────────────────────────────────────────
@@ -74,7 +76,13 @@ app.get([
   '/habbita-api/health',
   '/habbita-api/api/v1',
   '/habbita-api/api/v1/health',
-], (_req, res) => res.json({ status: 'ok', name: 'HABBITA API' }));
+  // '/porton_del_rio_api',
+  // '/porton_del_rio_api/',
+  // '/porton_del_rio_api/health',
+  // '/porton_del_rio_api/api/v1',
+  // '/porton_del_rio_api/api/v1/health',
+// ], (_req, res) => res.json({ status: 'ok', name: 'PORTON DEL RIO API' }));
+], (_req, res) => res.json({ status: 'ok', name: 'PORTON DEL RIO API' }));
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Ruta no encontrada' }));
